@@ -325,7 +325,7 @@ function previewSnapshotItem(snapshot: NoteSnapshot) {
 
 // ── 导出 ──
 function exportAsMarkdown() {
-  window.open(`/api/export/note/${noteId.value}`, '_blank')
+  window.open(`${import.meta.env.VITE_API_BASE_URL || ''}/api/export/note/${noteId.value}`, '_blank')
 }
 
 // 触发防抖保存（标题变化）

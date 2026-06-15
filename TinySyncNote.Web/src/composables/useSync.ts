@@ -38,7 +38,7 @@ export function useSync() {
     if (!token) return
 
     connection = new signalR.HubConnectionBuilder()
-      .withUrl('/hubs/sync', {
+      .withUrl(`${import.meta.env.VITE_API_BASE_URL || ''}/hubs/sync`, {
         accessTokenFactory: () => token,
         transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling
       })

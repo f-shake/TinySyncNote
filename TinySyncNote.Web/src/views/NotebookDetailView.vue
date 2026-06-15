@@ -52,7 +52,7 @@ function openNote(noteId: string) {
 }
 
 function exportNotebook() {
-  window.open(`/api/export/notebook/${notebookId.value}`, '_blank')
+  window.open(`${import.meta.env.VITE_API_BASE_URL || ''}/api/export/notebook/${notebookId.value}`, '_blank')
 }
 
 function onImportFileChange(file: File) {
