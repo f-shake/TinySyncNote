@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { getAccessToken } from '../utils/http'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory('/note/'),
   routes: [
     {
       path: '/login',
