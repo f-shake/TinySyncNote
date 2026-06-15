@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="TinySyncNote.Api/TinySyncNote.Api.csproj" />
+  <Project Path="TinySyncNote.Core/TinySyncNote.Core.csproj" />
+  <Project Path="TinySyncNote.Tests/TinySyncNote.Tests.csproj" />
+</Solution>
