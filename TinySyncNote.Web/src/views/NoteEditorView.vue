@@ -28,7 +28,9 @@ const dirty = ref(false)   // 是否有未保存修改
 
 let vditor: Vditor | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let modeCheckTimer: ReturnType<typeof setInterval> | null = null
 let lastSavedVersion = 0
+let pendingSaveVersion = 0  // 正在保存的版本号，用于过滤自己的 SignalR 通知
 
 // ── 离开页面确认 ──
 onBeforeRouteLeave(async (_to, _from, next) => {
@@ -76,16 +78,23 @@ const {
 } = useSync()
 
 onNoteUpdated((evt) => {
-  // 忽略自己刚保存的（版本号一致）
-  if (evt.noteId === noteId.value && evt.newVersion !== lastSavedVersion) {
-    remoteUpdateBanner.value = true
-    ElNotification({
-      title: '笔记已更新',
-      message: '其他设备修改了此笔记',
-      type: 'info',
-      duration: 4000
-    })
-  }
+  if (evt.noteId !== noteId.value) return
+
+  // 情况 A：SignalR 通知的版本号与 lastSavedVersion 一致 → 自己刚保存成功（HTTP 先到），忽略
+  if (evt.newVersion === lastSavedVersion) return
+
+  // 情况 B：自己有正在进行的保存，且 SignalR 通知的版本号正好是保存版本 +1
+  // → 这是自己的保存经由 SignalR 回传（WebSocket 快于 HTTP 响应），忽略
+  if (pendingSaveVersion > 0 && evt.newVersion === pendingSaveVersion + 1) return
+
+  // 情况 C：真正的跨设备修改
+  remoteUpdateBanner.value = true
+  ElNotification({
+    title: '笔记已更新',
+    message: '其他设备修改了此笔记',
+    type: 'info',
+    duration: 4000
+  })
 })
 
 onNoteDeleted((evt) => {
@@ -108,6 +117,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (saveTimer) clearTimeout(saveTimer)
+  if (modeCheckTimer) clearInterval(modeCheckTimer)
   vditor?.destroy()
 })
 
@@ -127,6 +137,7 @@ async function loadNote() {
     const note = await noteStore.fetchById(noteId.value)
     if (!note) { router.push('/notebooks'); return }
     title.value = note.title
+    lastSavedVersion = note.version  // 同步当前版本，防止 SignalR 事件误判
 
     // 先显示 DOM，再初始化编辑器
     loaded.value = true
@@ -141,21 +152,30 @@ async function loadNote() {
 function initEditor(content: string) {
   if (!editorRef.value) return
 
+  const isDark = document.documentElement.classList.contains('dark')
+  const savedMode = (localStorage.getItem('vditorMode') as 'sv' | 'ir' | 'wysiwyg') || 'ir'
+
   vditor = new Vditor(editorRef.value, {
     value: content || '',
     height: '100%',
     minHeight: 400,
-    mode: 'sv',
+    mode: savedMode,
     placeholder: '开始书写...',
     cache: { enable: false },
-    theme: 'classic',
+    theme: isDark ? 'dark' : 'classic',
     icon: 'material',
+    preview: {
+      theme: {
+        current: isDark ? 'dark' : 'light',
+      },
+      actions: [],  // 隐藏 Desktop / Tablet / Mobile 设备切换按钮
+    },
     toolbar: [
       'headings', 'bold', 'italic', 'strike', '|',
       'list', 'ordered-list', 'check', '|',
-      'code', 'code-block', '|',
+      'code', 'inline-code', '|',
       'table', 'link', 'quote', '|',
-      'preview', 'fullscreen', 'outline', '|',
+      'edit-mode', 'fullscreen', 'outline', '|',
       'undo', 'redo'
     ],
     upload: {
@@ -179,7 +199,22 @@ function initEditor(content: string) {
       saveTimer = setTimeout(autoSave, 3000)
     },
     after: () => {
-      // 编辑器就绪
+      // 监听 html 标签 class 变化，同步 Vditor 主题
+      const observer = new MutationObserver(() => {
+        if (!vditor) return
+        const dark = document.documentElement.classList.contains('dark')
+        vditor.setTheme(dark ? 'dark' : 'classic', dark ? 'dark' : 'light')
+      })
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+
+      // 轮询检测编辑模式切换（Vditor 未提供模式切换事件）
+      modeCheckTimer = setInterval(() => {
+        if (!vditor) return
+        const mode = vditor.getCurrentMode()
+        if (mode && mode !== localStorage.getItem('vditorMode')) {
+          localStorage.setItem('vditorMode', mode)
+        }
+      }, 1000)
     }
   })
 }
@@ -199,12 +234,14 @@ async function autoSave() {
   if (!content && !title.value) return
 
   saving.value = true
+  const sendVersion = noteStore.currentNote.version
+  pendingSaveVersion = sendVersion  // 记录发送时的版本号，用于过滤回传通知
   try {
     const result = await noteStore.update(
       noteId.value,
       title.value || '无标题笔记',
       content,
-      noteStore.currentNote.version
+      sendVersion
     )
     lastSavedVersion = result.version
     dirty.value = false
@@ -215,6 +252,7 @@ async function autoSave() {
     }
   } finally {
     saving.value = false
+    pendingSaveVersion = 0  // 无论成功失败都清除
   }
 }
 
@@ -326,9 +364,13 @@ function onTitleChange() {
           </el-tag>
         </el-tooltip>
 
-        <el-tag v-if="dirty" type="warning" size="small" effect="plain">未保存</el-tag>
-        <el-tag v-if="saving" type="info" size="small" effect="plain">保存中...</el-tag>
-        <el-tag v-else-if="noteStore.currentNote && !dirty" type="success" size="small" effect="plain">已保存</el-tag>
+        <el-tag
+          :type="saving ? 'info' : dirty ? 'warning' : 'success'"
+          size="small"
+          effect="plain"
+        >
+          {{ saving ? '保存中' : dirty ? '未保存' : '已保存' }}
+        </el-tag>
 
         <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
         <el-button text :icon="Download" @click="handleSave">保存</el-button>
@@ -434,7 +476,7 @@ function onTitleChange() {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 8px 20px;
   border-bottom: 1px solid var(--el-border-color-light);
   background: var(--el-bg-color);
   z-index: 10;
@@ -484,6 +526,7 @@ function onTitleChange() {
 .vditor-wrap :deep(.vditor-toolbar) {
   border-bottom: 1px solid var(--el-border-color-light) !important;
 }
+
 
 .editor-loading {
   padding: 40px;
@@ -575,5 +618,50 @@ function onTitleChange() {
 
 .restore-btn {
   width: 100%;
+}
+
+/* ════════════════════════════════════════
+   编辑器 — 移动端自适应
+   ════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .editor-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 12px;
+  }
+
+  .title-area {
+    order: -1;
+    flex: 1 1 100%;
+    margin-bottom: 2px;
+  }
+
+  .title-input :deep(.el-input__inner) {
+    font-size: 15px;
+  }
+
+  .toolbar-actions {
+    gap: 4px;
+  }
+
+  .toolbar-actions .el-button {
+    padding: 5px 6px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .editor-toolbar {
+    padding: 4px 4px;
+    gap: 4px;
+  }
+
+  .toolbar-actions .el-button span {
+    display: none;
+  }
+
+  .toolbar-actions .el-tag span {
+    font-size: 11px;
+  }
 }
 </style>

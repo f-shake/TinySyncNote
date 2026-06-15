@@ -588,4 +588,27 @@ const flatTree = computed(() => flattenTree(catStore.tree))
   color: var(--el-text-color-secondary);
   margin: 0;
 }
+
+/* ════════════════════════════════════════
+   笔记本详情 — 移动端自适应
+   ════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .notebook-detail-view {
+    padding: 12px;
+  }
+
+  .content-area {
+    flex-direction: column;
+  }
+
+  .category-tree {
+    width: 100%;
+    max-height: 200px;
+    flex-shrink: 0;
+  }
+
+  .page-header h2 {
+    font-size: 16px;
+  }
+}
 </style>

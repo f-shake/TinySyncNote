@@ -5,6 +5,10 @@ import { useAuthStore } from './stores/auth'
 const authStore = useAuthStore()
 
 onMounted(async () => {
+  // 恢复暗色模式偏好
+  if (localStorage.getItem('theme') === 'dark') {
+    document.documentElement.classList.add('dark')
+  }
   await authStore.init()
 })
 </script>

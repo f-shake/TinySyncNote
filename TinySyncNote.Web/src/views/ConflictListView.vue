@@ -128,4 +128,11 @@ function openConflict(id: string) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+
+/* 移动端自适应 */
+@media (max-width: 768px) {
+  .conflict-list-view {
+    padding: 16px;
+  }
+}
 </style>
