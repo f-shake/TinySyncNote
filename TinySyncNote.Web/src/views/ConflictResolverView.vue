@@ -80,13 +80,8 @@ async function resolve(strategy: 'KeepLocal' | 'KeepRemote' | 'Merged') {
       </div>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="loading-state">
-      <el-skeleton :rows="6" animated />
-    </div>
-
     <!-- Conflict content -->
-    <div v-else-if="conflict" class="resolver-body">
+    <div v-if="conflict" class="resolver-body">
       <div class="diff-panels">
         <!-- 本地版本 -->
         <div class="diff-panel local">
@@ -181,9 +176,6 @@ async function resolve(strategy: 'KeepLocal' | 'KeepRemote' | 'Merged') {
   gap: 8px;
 }
 
-.loading-state {
-  padding: 40px;
-}
 
 .resolver-body {
   flex: 1;

@@ -80,13 +80,8 @@ function openNotebook(id: string) {
       </el-button>
     </div>
 
-    <!-- Loading -->
-    <div v-if="store.loading" class="loading-state">
-      <el-skeleton :rows="4" animated />
-    </div>
-
     <!-- Error -->
-    <div v-else-if="store.error && store.notebooks.length === 0" class="error-state">
+    <div v-if="store.error && store.notebooks.length === 0" class="error-state">
       <el-result
         icon="error"
         title="加载失败"
@@ -202,10 +197,6 @@ function openNotebook(id: string) {
   align-items: center;
 }
 
-.loading-state {
-  padding: 40px;
-}
-
 .notebook-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -214,7 +205,7 @@ function openNotebook(id: string) {
 
 .notebook-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--el-border-color-light);
@@ -231,7 +222,6 @@ function openNotebook(id: string) {
 
 .card-icon {
   flex-shrink: 0;
-  margin-top: 2px;
 }
 
 .card-body {
@@ -260,7 +250,20 @@ function openNotebook(id: string) {
 .card-actions {
   flex-shrink: 0;
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
+  align-self: center;
+  width: 28px;
+}
+
+.card-actions :deep(.el-button) {
+  width: 100%;
+  padding: 5px 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.notebook-card .card-actions {
   opacity: 0;
   transition: opacity 0.2s;
 }

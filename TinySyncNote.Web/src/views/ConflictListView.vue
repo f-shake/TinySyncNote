@@ -32,13 +32,8 @@ function openConflict(id: string) {
       <h2>未解决的冲突</h2>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="loading-state">
-      <el-skeleton :rows="3" animated />
-    </div>
-
     <!-- Empty -->
-    <div v-else-if="conflicts.length === 0" class="empty-state">
+    <div v-if="!loading && conflicts.length === 0" class="empty-state">
       <el-empty description="暂无冲突" :image-size="160">
         <template #image>
           <el-icon :size="64" color="#c0c4cc"><WarningFilled /></el-icon>
@@ -84,7 +79,6 @@ function openConflict(id: string) {
   font-size: 22px;
 }
 
-.loading-state,
 .empty-state {
   flex: 1;
   display: flex;

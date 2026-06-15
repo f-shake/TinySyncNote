@@ -76,7 +76,7 @@ public class AuthService : IAuthService
     private AuthResponse GenerateAuthResponse(User user)
     {
         var accessToken = GenerateJwtToken(user, out var expiresAt);
-        var refreshToken = GenerateRefreshToken();
+        var refreshToken = GenerateRefreshToken(user);
 
         return new AuthResponse
         {
@@ -117,12 +117,27 @@ public class AuthService : IAuthService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static string GenerateRefreshToken()
+    private string GenerateRefreshToken(User user)
     {
-        var randomBytes = new byte[64];
-        using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomBytes);
-        return Convert.ToBase64String(randomBytes);
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Key));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Email, user.Email)
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: _jwtSettings.Issuer,
+            audience: _jwtSettings.Audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays),
+            signingCredentials: credentials
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private ClaimsPrincipal GetPrincipalFromExpiredToken(string token)

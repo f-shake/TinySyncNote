@@ -47,6 +47,11 @@ const router = createRouter({
           path: 'conflicts/:id',
           name: 'ConflictResolver',
           component: () => import('../views/ConflictResolverView.vue')
+        },
+        {
+          path: 'settings',
+          name: 'Settings',
+          component: () => import('../views/SettingsView.vue')
         }
       ]
     },

@@ -164,6 +164,7 @@ function initEditor(content: string) {
     cache: { enable: false },
     theme: isDark ? 'dark' : 'classic',
     icon: 'material',
+    customWysiwygToolbar: () => {},
     preview: {
       theme: {
         current: isDark ? 'dark' : 'light',
@@ -403,11 +404,6 @@ function onTitleChange() {
     </div>
   </div>
 
-  <!-- Loading -->
-  <div v-else class="editor-loading">
-    <el-skeleton :rows="10" animated />
-  </div>
-
   <!-- ═══ 快照历史抽屉 ═══ -->
   <el-drawer
     v-model="showSnapshotDrawer"
@@ -527,12 +523,6 @@ function onTitleChange() {
   border-bottom: 1px solid var(--el-border-color-light) !important;
 }
 
-
-.editor-loading {
-  padding: 40px;
-  height: 100%;
-}
-
 /* ── 快照抽屉 ── */
 .snapshot-drawer-body {
   display: flex;
@@ -623,45 +613,24 @@ function onTitleChange() {
 /* ════════════════════════════════════════
    编辑器 — 移动端自适应
    ════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .editor-toolbar {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 12px;
-  }
+@media (max-width: 1100px) {
+  .toolbar-actions .el-button span { display: none; }
+  .toolbar-actions { gap: 2px; }
+  .toolbar-actions .el-button { padding: 5px 6px; font-size: 12px; }
+}
 
-  .title-area {
-    order: -1;
-    flex: 1 1 100%;
-    margin-bottom: 2px;
-  }
+@media (max-width: 900px) {
+  .editor-toolbar { flex-wrap: wrap; gap: 4px; padding: 6px 8px; }
+  .title-area { flex: 1; min-width: 100px; }
+}
 
-  .title-input :deep(.el-input__inner) {
-    font-size: 15px;
-  }
-
-  .toolbar-actions {
-    gap: 4px;
-  }
-
-  .toolbar-actions .el-button {
-    padding: 5px 6px;
-    font-size: 12px;
-  }
+@media (max-width: 720px) {
+  .toolbar-actions .el-tag { display: none; }
 }
 
 @media (max-width: 480px) {
-  .editor-toolbar {
-    padding: 4px 4px;
-    gap: 4px;
-  }
-
-  .toolbar-actions .el-button span {
-    display: none;
-  }
-
-  .toolbar-actions .el-tag span {
-    font-size: 11px;
-  }
+  .editor-toolbar { padding: 4px 4px; gap: 2px; }
+  .toolbar-actions .el-button { padding: 4px 4px; }
+  .toolbar-actions { gap: 2px; }
 }
 </style>

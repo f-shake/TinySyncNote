@@ -1,135 +1,55 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue'
+import { onMounted, watch, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCategoryStore } from '../stores/category'
-import { useNotebookStore } from '../stores/notebook'
 import { useNoteStore } from '../stores/note'
+import { useNotebookStore } from '../stores/notebook'
 import http from '../utils/http'
 import {
-  FolderOpened, Plus, Edit, Delete, Document,
-  ArrowRight, ArrowDown, Download, Upload
+  Plus, Document, Download, Upload
 } from '@element-plus/icons-vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
-import type { Category } from '../types'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
-const catStore = useCategoryStore()
-const notebookStore = useNotebookStore()
 const noteStore = useNoteStore()
+const notebookStore = useNotebookStore()
 
 const notebookId = computed(() => route.params.id as string)
-const selectedCategoryId = ref<string | null>(null)
-
-// 创建/重命名对话框
-const showCreateCatDialog = ref(false)
-const showRenameCatDialog = ref(false)
-const newCatName = ref('')
-const editingCat = ref<Category | null>(null)
-const createParentId = ref<string | undefined>(undefined)
-
-onMounted(async () => {
-  await catStore.fetchTree(notebookId.value)
-  // 展开一级
-  catStore.tree.forEach(c => expandedKeys.value.push(c.id))
-  // 默认选中第一个有笔记的目录
-  const firstCat = findFirstCategoryWithNotes(catStore.tree)
-  if (firstCat) selectCategory(firstCat.id)
-})
-
-// 监视笔记本 ID 变化
-watch(notebookId, (id) => {
-  catStore.fetchTree(id)
-  selectedCategoryId.value = null
-  noteStore.notes = []
-})
-
-// ── 选择目录 ──
-function selectCategory(id: string) {
-  selectedCategoryId.value = id
-  noteStore.fetchByCategory(id)
-}
-
-// ── 查找第一个有笔记的目录（递归） ──
-function findFirstCategoryWithNotes(cats: Category[]): Category | null {
-  for (const c of cats) {
-    if (c.noteCount > 0) return c
-    const found = findFirstCategoryWithNotes(c.children || [])
-    if (found) return found
-  }
-  return cats.length > 0 ? cats[0] : null
-}
-
-// ── 获取当前笔记本名称 ──
 const currentNotebookName = computed(() => {
   const nb = notebookStore.notebooks.find(n => n.id === notebookId.value)
-  return nb?.name || '笔记本'
+  return nb?.name || '加载中...'
 })
 
-// ── 新建目录 ──
-function openCreateCategory(parentId?: string) {
-  createParentId.value = parentId
-  newCatName.value = ''
-  showCreateCatDialog.value = true
-}
-
-async function handleCreateCategory() {
-  if (!newCatName.value.trim()) return
-  try {
-    await catStore.create(notebookId.value, newCatName.value.trim(), createParentId.value)
-    showCreateCatDialog.value = false
-    newCatName.value = ''
-  } catch { /* handled */ }
-}
-
-// ── 重命名目录 ──
-function openRenameCategory(cat: Category) {
-  editingCat.value = cat
-  newCatName.value = cat.name
-  showRenameCatDialog.value = true
-}
-
-async function handleRenameCategory() {
-  if (!editingCat.value || !newCatName.value.trim()) return
-  try {
-    await catStore.rename(editingCat.value.id, newCatName.value.trim(), notebookId.value)
-    showRenameCatDialog.value = false
-    editingCat.value = null
-  } catch { /* handled */ }
-}
-
-// ── 删除目录 ──
-async function handleDeleteCategory(cat: Category) {
-  try {
-    await ElMessageBox.confirm(
-      `确定删除目录「${cat.name}」？目录下的笔记将一并删除。`,
-      '删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
-    await catStore.remove(cat.id, notebookId.value)
-    if (selectedCategoryId.value === cat.id) {
-      selectedCategoryId.value = null
-      noteStore.notes = []
-    }
-  } catch { /* cancelled or handled */ }
-}
-
-// ── 新建笔记 ──
-async function createNote() {
-  if (!selectedCategoryId.value) {
-    ElMessageBox.alert('请先选择一个目录', '提示')
-    return
-  }
-  try {
-    const note = await noteStore.create(selectedCategoryId.value!, '无标题笔记')
-    router.push(`/note/${note.id}`)
-  } catch { /* handled */ }
-}
-
-// ── 导入导出 ──
+// 导入对话框
 const showImportDialog = ref(false)
 const importFile = ref<File | null>(null)
 const importing = ref(false)
+
+onMounted(() => {
+  if (noteStore.selectedCategoryId) {
+    noteStore.fetchByCategory(noteStore.selectedCategoryId)
+  }
+})
+
+watch(notebookId, () => {
+  noteStore.selectedCategoryId = null
+  noteStore.notes = []
+})
+
+function createNote() {
+  if (!noteStore.selectedCategoryId) {
+    ElMessage.warning('请先在左侧选择一个目录')
+    return
+  }
+  noteStore.create(noteStore.selectedCategoryId, '无标题笔记')
+    .then(note => {
+      router.push(`/note/${note.id}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
+    })
+}
+
+function openNote(noteId: string) {
+  router.push(`/note/${noteId}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
+}
 
 function exportNotebook() {
   window.open(`/api/export/notebook/${notebookId.value}`, '_blank')
@@ -145,74 +65,22 @@ async function handleImport() {
   try {
     const formData = new FormData()
     formData.append('file', importFile.value)
-
-    const isZip = importFile.value.name.endsWith('.zip')
-    const url = isZip
-      ? `/api/export/import/zip?notebookId=${notebookId.value}`
-      : `/api/export/import/markdown?categoryId=${selectedCategoryId.value || ''}`
-
+    const url = `/api/import/markdown?categoryId=${noteStore.selectedCategoryId || ''}`
     await http.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-
     ElMessage.success('导入成功')
     showImportDialog.value = false
-    importFile.value = null
-
-    // 刷新目录树和笔记列表
-    await catStore.fetchTree(notebookId.value)
-    if (selectedCategoryId.value) {
-      await noteStore.fetchByCategory(selectedCategoryId.value)
+    if (noteStore.selectedCategoryId) {
+      noteStore.fetchByCategory(noteStore.selectedCategoryId)
     }
   } catch (err: any) {
     ElMessage.error(err.response?.data?.message || '导入失败')
   } finally {
     importing.value = false
+    importFile.value = null
   }
 }
-
-// ── 展开/折叠目录树节点 ──
-const expandedKeys = ref<string[]>([])
-
-function toggleExpand(cat: Category) {
-  const idx = expandedKeys.value.indexOf(cat.id)
-  if (idx >= 0) expandedKeys.value.splice(idx, 1)
-  else expandedKeys.value.push(cat.id)
-}
-
-function isExpanded(cat: Category) {
-  return expandedKeys.value.includes(cat.id)
-}
-
-// ── flatten tree for rendering ──
-interface FlatItem {
-  id: string
-  name: string
-  depth: number
-  noteCount: number
-  data: Category
-  hasChildren: boolean
-}
-
-function flattenTree(cats: Category[], depth = 0): FlatItem[] {
-  const result: FlatItem[] = []
-  for (const c of cats) {
-    result.push({
-      id: c.id,
-      name: c.name,
-      depth,
-      noteCount: c.noteCount,
-      data: c,
-      hasChildren: (c.children?.length || 0) > 0
-    })
-    if (isExpanded(c) && c.children?.length) {
-      result.push(...flattenTree(c.children, depth + 1))
-    }
-  }
-  return result
-}
-
-const flatTree = computed(() => flattenTree(catStore.tree))
 </script>
 
 <template>
@@ -225,134 +93,40 @@ const flatTree = computed(() => flattenTree(catStore.tree))
       </el-breadcrumb>
 
       <div class="header-actions">
-        <el-button :icon="Plus" @click="openCreateCategory()">新建目录</el-button>
         <el-button type="primary" :icon="Plus" @click="createNote">新建笔记</el-button>
         <el-button :icon="Download" @click="exportNotebook">导出</el-button>
         <el-button :icon="Upload" @click="showImportDialog = true">导入</el-button>
       </div>
     </div>
 
-    <div class="content-area">
-      <!-- 左侧：目录树 -->
-      <div class="category-tree">
-        <div class="panel-header">
-          <span>目录</span>
-          <el-button text :icon="Plus" size="small" @click="openCreateCategory()" />
-        </div>
-
-        <div v-if="catStore.loading" class="tree-loading">
-          <el-skeleton :rows="3" animated />
-        </div>
-
-        <div v-else-if="catStore.tree.length === 0" class="tree-empty">
-          <el-empty description="暂无目录" :image-size="80" />
-        </div>
-
-        <div v-else class="tree-scroll">
-          <div
-            v-for="item in flatTree"
-            :key="item.id"
-            class="tree-node"
-            :class="{ selected: selectedCategoryId === item.id }"
-            :style="{ paddingLeft: 12 + item.depth * 20 + 'px' }"
-            @click="selectCategory(item.id)"
-          >
-            <el-icon
-              v-if="item.hasChildren"
-              :size="14"
-              class="expand-icon"
-              @click.stop="toggleExpand(item.data)"
-            >
-              <ArrowRight v-if="!isExpanded(item.data)" />
-              <ArrowDown v-else />
-            </el-icon>
-            <span v-else class="expand-placeholder" />
-
-            <el-icon :size="16" color="#e6a23c"><FolderOpened /></el-icon>
-            <span class="node-name">{{ item.name }}</span>
-            <span class="note-badge">{{ item.noteCount }}</span>
-
-            <span class="node-actions" @click.stop>
-              <el-button text :icon="Edit" size="small" @click="openRenameCategory(item.data)" />
-              <el-button text :icon="Delete" size="small" type="danger" @click="handleDeleteCategory(item.data)" />
-            </span>
-          </div>
-        </div>
+    <!-- 笔记列表 -->
+    <div class="note-list">
+      <div v-if="!noteStore.selectedCategoryId" class="empty-hint">
+        <el-empty description="请在左侧选择一个目录" :image-size="120" />
       </div>
 
-      <!-- 右侧：笔记列表 -->
-      <div class="note-list">
-        <div class="panel-header">笔记</div>
+      <div v-else-if="noteStore.notes.length === 0 && !noteStore.loading" class="empty-hint">
+        <el-empty description="该目录下还没有笔记" :image-size="120">
+          <el-button type="primary" :icon="Plus" @click="createNote">新建笔记</el-button>
+        </el-empty>
+      </div>
 
-        <div v-if="!selectedCategoryId" class="empty-hint">
-          <el-empty description="请先选择一个目录" :image-size="120" />
-        </div>
-
-        <div v-else-if="noteStore.loading" class="note-loading">
-          <el-skeleton :rows="5" animated />
-        </div>
-
-        <div v-else-if="noteStore.notes.length === 0" class="empty-hint">
-          <el-empty description="该目录下还没有笔记" :image-size="120">
-            <el-button type="primary" :icon="Plus" @click="createNote">新建笔记</el-button>
-          </el-empty>
-        </div>
-
-        <div v-else class="note-scroll">
-          <div
-            v-for="note in noteStore.notes"
-            :key="note.id"
-            class="note-item"
-            :class="{ active: false }"
-            @click="router.push(`/note/${note.id}`)"
-          >
-            <el-icon :size="16" color="#409eff"><Document /></el-icon>
-            <div class="note-info">
-              <div class="note-title">{{ note.title }}</div>
-              <div class="note-meta">{{ new Date(note.updatedAt).toLocaleString() }}</div>
-            </div>
+      <div v-else class="note-scroll">
+        <div
+          v-for="note in noteStore.notes"
+          :key="note.id"
+          class="note-item"
+          :class="{ active: note.id === route.params.id }"
+          @click="openNote(note.id)"
+        >
+          <el-icon :size="16" color="#409eff"><Document /></el-icon>
+          <div class="note-info">
+            <div class="note-title">{{ note.title }}</div>
+            <div class="note-time">{{ new Date(note.updatedAt).toLocaleString() }}</div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Create Category Dialog -->
-    <el-dialog
-      v-model="showCreateCatDialog"
-      title="新建目录"
-      width="380px"
-      @closed="newCatName = ''"
-    >
-      <el-input
-        v-model="newCatName"
-        placeholder="请输入目录名称"
-        maxlength="200"
-        @keyup.enter="handleCreateCategory"
-      />
-      <template #footer>
-        <el-button @click="showCreateCatDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleCreateCategory">创建</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- Rename Category Dialog -->
-    <el-dialog
-      v-model="showRenameCatDialog"
-      title="重命名目录"
-      width="380px"
-      @closed="editingCat = null; newCatName = ''"
-    >
-      <el-input
-        v-model="newCatName"
-        placeholder="请输入新名称"
-        maxlength="200"
-        @keyup.enter="handleRenameCategory"
-      />
-      <template #footer>
-        <el-button @click="showRenameCatDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleRenameCategory">确认</el-button>
-      </template>
-    </el-dialog>
 
     <!-- ═══ 导入对话框 ═══ -->
     <el-dialog
@@ -403,6 +177,7 @@ const flatTree = computed(() => flattenTree(catStore.tree))
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .header-actions {
@@ -410,108 +185,7 @@ const flatTree = computed(() => flattenTree(catStore.tree))
   gap: 8px;
 }
 
-.content-area {
-  flex: 1;
-  display: flex;
-  gap: 16px;
-  overflow: hidden;
-}
-
-/* ── 左侧目录树 ── */
-.category-tree {
-  width: 280px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.panel-header {
-  padding: 12px 16px;
-  font-weight: 600;
-  border-bottom: 1px solid var(--el-border-color-light);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.tree-loading,
-.tree-empty,
-.tree-scroll {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.tree-loading {
-  padding: 16px;
-}
-
-.tree-empty {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-}
-
-.tree-node {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-  font-size: 13px;
-  position: relative;
-}
-
-.tree-node:hover {
-  background: var(--el-fill-color-light);
-}
-
-.tree-node.selected {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-}
-
-.expand-icon {
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: transform 0.2s;
-}
-
-.expand-placeholder {
-  width: 14px;
-  flex-shrink: 0;
-}
-
-.node-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.note-badge {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  padding: 0 6px;
-  border-radius: 8px;
-  margin-right: 4px;
-}
-
-.node-actions {
-  display: none;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.tree-node:hover .node-actions {
-  display: flex;
-}
-
-/* ── 右侧笔记列表 ── */
+/* ── 笔记列表 ── */
 .note-list {
   flex: 1;
   border: 1px solid var(--el-border-color-light);
@@ -521,16 +195,11 @@ const flatTree = computed(() => flattenTree(catStore.tree))
   overflow: hidden;
 }
 
-.empty-hint,
-.note-loading {
+.empty-hint {
   flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-.note-loading {
-  padding: 24px;
 }
 
 .note-scroll {
@@ -570,13 +239,13 @@ const flatTree = computed(() => flattenTree(catStore.tree))
   white-space: nowrap;
 }
 
-.note-meta {
+.note-time {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-top: 2px;
 }
 
-/* ── 导入 ── */
+/* ── 导入对话框 ── */
 .import-body {
   display: flex;
   flex-direction: column;
@@ -589,26 +258,9 @@ const flatTree = computed(() => flattenTree(catStore.tree))
   margin: 0;
 }
 
-/* ════════════════════════════════════════
-   笔记本详情 — 移动端自适应
-   ════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .notebook-detail-view {
-    padding: 12px;
-  }
-
-  .content-area {
-    flex-direction: column;
-  }
-
-  .category-tree {
-    width: 100%;
-    max-height: 200px;
-    flex-shrink: 0;
-  }
-
-  .page-header h2 {
-    font-size: 16px;
-  }
+@media (max-width: 720px) {
+  .notebook-detail-view { padding: 12px; }
+  .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .header-actions { justify-content: flex-end; }
 }
 </style>

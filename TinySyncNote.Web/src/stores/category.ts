@@ -22,9 +22,9 @@ export const useCategoryStore = defineStore('category', () => {
 
   async function create(notebookId: string, name: string, parentCategoryId?: string) {
     try {
-      await http.post('/api/categories', { notebookId, name, parentCategoryId })
+      const res = await http.post('/api/categories', { notebookId, name, parentCategoryId })
       await fetchTree(notebookId)
-      ElMessage.success('目录已创建')
+      return res.data?.id as string
     } catch (err: any) {
       ElMessage.error(err.response?.data?.message || '创建目录失败')
       throw err

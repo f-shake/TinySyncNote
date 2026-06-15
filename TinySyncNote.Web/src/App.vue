@@ -5,8 +5,9 @@ import { useAuthStore } from './stores/auth'
 const authStore = useAuthStore()
 
 onMounted(async () => {
-  // 恢复暗色模式偏好
-  if (localStorage.getItem('theme') === 'dark') {
+  // 暗色模式：优先使用用户手动设置，否则跟随系统
+  const theme = localStorage.getItem('theme')
+  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
     document.documentElement.classList.add('dark')
   }
   await authStore.init()
@@ -14,11 +15,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <router-view v-if="authStore.isLoaded" v-slot="{ Component }">
-    <transition name="fade" mode="out-in">
-      <component :is="Component" />
-    </transition>
-  </router-view>
+  <router-view v-if="authStore.isLoaded" />
   <div v-else class="app-loading">
     <el-icon class="is-loading" :size="32" color="#409eff">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -50,16 +47,5 @@ html, body, #app {
   height: 100vh;
   gap: 16px;
   color: #909399;
-}
-
-/* 路由过渡动画 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 </style>

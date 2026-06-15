@@ -8,6 +8,7 @@ export const useNoteStore = defineStore('note', () => {
   const notes = ref<NoteListItem[]>([])
   const currentNote = ref<NoteDetailResponse | null>(null)
   const loading = ref(false)
+  const selectedCategoryId = ref<string | null>(null)
 
   async function fetchByCategory(categoryId: string) {
     loading.value = true
@@ -95,5 +96,5 @@ export const useNoteStore = defineStore('note', () => {
     }
   }
 
-  return { notes, currentNote, loading, fetchByCategory, fetchById, create, update, remove }
+  return { notes, currentNote, loading, selectedCategoryId, fetchByCategory, fetchById, create, update, remove }
 })

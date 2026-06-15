@@ -129,4 +129,30 @@ async function handleLogin() {
 .login-footer a:hover {
   text-decoration: underline;
 }
+
+/* ── 暗色模式 ── */
+html.dark .login-container {
+  background: linear-gradient(135deg, #2c3e6b 0%, #3d2a5c 100%);
+}
+
+html.dark .login-card {
+  background: #1e1e1e;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .app-title {
+  color: #e0e0e0;
+}
+
+html.dark .app-subtitle {
+  color: #999;
+}
+
+html.dark .login-footer {
+  color: #999;
+}
+
+html.dark .login-footer a {
+  color: #5ea6f0;
+}
 </style>
