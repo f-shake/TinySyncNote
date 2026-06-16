@@ -5,7 +5,7 @@ import { useNoteStore } from '../stores/note'
 import { useSnapshotStore } from '../stores/snapshot'
 import type { NoteSnapshot } from '../types'
 import { ElMessage, ElNotification } from 'element-plus'
-import { ArrowLeft, Delete, Clock, Share, Promotion } from '@element-plus/icons-vue'
+import { Delete, Clock, Share, Promotion } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
@@ -301,10 +301,6 @@ function handleSaveTagClick() {
   }
 }
 
-function goBack() {
-  // 先保存再返回
-  handleSave().then(() => router.back())
-}
 
 // 重新加载笔记（其他设备修改后）
 async function reloadNote() {
@@ -391,6 +387,10 @@ async function loadAISettings() {
 }
 
 function openAIChat() {
+  if (showAIChat.value) {
+    showAIChat.value = false
+    return
+  }
   if (!aiSettings.value?.ai_key) {
     ElMessage.warning('请先在设置中配置 AI')
     return
@@ -432,8 +432,6 @@ function onTitleChange() {
   <div class="note-editor-view" v-if="loaded">
     <!-- 顶栏 -->
     <div class="editor-toolbar">
-      <el-button text :icon="ArrowLeft" @click="goBack">返回</el-button>
-
       <div class="title-area">
         <el-input
           v-model="title"
@@ -486,18 +484,20 @@ function onTitleChange() {
       </template>
     </el-alert>
 
-    <!-- Vditor 容器 -->
-    <div class="editor-container">
-      <div ref="editorRef" class="vditor-wrap" />
-    </div>
+    <!-- Vditor 容器 + AI 面板 -->
+    <div class="editor-body">
+      <div class="editor-container">
+        <div ref="editorRef" class="vditor-wrap" />
+      </div>
 
-    <!-- ═══ AI 助手 ═══ -->
-    <AIChatPanel
-      :visible="showAIChat"
-      :editor="editorActions"
-      :settings="aiSettings"
-      @close="showAIChat = false"
-    />
+      <!-- ═══ AI 助手 ═══ -->
+      <AIChatPanel
+        :visible="showAIChat"
+        :editor="editorActions"
+        :settings="aiSettings"
+        @close="showAIChat = false"
+      />
+    </div>
   </div>
 
   <!-- ═══ 分享对话框 ═══ -->
@@ -632,6 +632,18 @@ function onTitleChange() {
   flex: 1;
   overflow: hidden;
   padding: 0;
+}
+
+.editor-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (min-width: 721px) {
+  .editor-body { flex-direction: row; }
+  .editor-body > :deep(.ai-panel) { width: 360px; flex-shrink: 0; }
 }
 
 .vditor-wrap {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Promotion, Loading } from '@element-plus/icons-vue'
+import { Promotion, Loading, Close } from '@element-plus/icons-vue'
 import type { AISettings, AIChatMessage } from '../types'
 import { runAIChat } from '../utils/ai'
 import type { EditorActions } from '../utils/ai'
@@ -80,7 +80,7 @@ function renderMarkdown(text: string): string {
   <div v-if="visible" class="ai-panel">
       <div class="ai-panel-header">
         <span>AI 助手</span>
-        <el-button text size="small" @click="emit('close')">关闭</el-button>
+        <el-button text :icon="Close" size="small" @click="emit('close')" />
       </div>
 
       <div ref="msgListRef" class="ai-msg-list" v-if="messages.length > 0">
@@ -119,7 +119,11 @@ function renderMarkdown(text: string): string {
   border-top: 1px solid var(--el-border-color-light);
   background: var(--el-bg-color);
   flex-shrink: 0;
-  animation: slideIn 0.25s ease-out;
+  animation: slideInRight 0.25s ease-out;
+}
+
+@media (max-width: 720px) {
+  .ai-panel { animation: slideInUp 0.25s ease-out; }
 }
 
 .ai-panel-header {
@@ -134,12 +138,13 @@ function renderMarkdown(text: string): string {
 }
 
 .ai-msg-list {
+  flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 8px 12px;
-  max-height: 260px;
+  min-height: 0;
 }
 
 .msg {
@@ -178,12 +183,13 @@ function renderMarkdown(text: string): string {
 .msg-body :deep(ul), .msg-body :deep(ol) { padding-left: 18px; margin: 4px 0; }
 
 .ai-empty {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 20px;
   font-size: 13px;
   color: var(--el-text-color-secondary);
+  min-height: 0;
 }
 
 .ai-footer {
@@ -201,7 +207,12 @@ function renderMarkdown(text: string): string {
 
 .ai-footer .el-input { flex: 1; }
 
-@keyframes slideIn {
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideInUp {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
