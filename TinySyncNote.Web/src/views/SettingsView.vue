@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Moon, Sunny, Key, Link as LinkIcon, Cpu } from '@element-plus/icons-vue'
+import { Moon, Sunny } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import http from '../utils/http'
-import type { AISettings } from '../types'
 
 const AUTO_SAVE_KEY = 'tsn_autosave_interval'
 

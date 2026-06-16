@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useCategoryStore } from '../stores/category'
 import { useNoteStore } from '../stores/note'
 import {
@@ -21,7 +21,6 @@ interface FlatItem {
 const categoryStore = useCategoryStore()
 const noteStore = useNoteStore()
 const route = useRoute()
-const router = useRouter()
 
 const notebookId = computed(() => route.params.id as string)
 

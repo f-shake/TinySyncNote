@@ -122,21 +122,6 @@ export function executeToolCall(toolCall: { name: string; arguments: string }, e
   }
 }
 
-// ── 非流式调用（用于 tool call 场景，需要完整响应） ──
-async function callAI(messages: AIChatMessage[], settings: AISettings): Promise<AIChatMessage> {
-  const url = `${settings.ai_url.replace(/\/+$/, '')}/chat/completions`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.ai_key}` },
-    body: JSON.stringify({ model: settings.ai_model || 'gpt-4o-mini', messages, tools: AI_TOOLS, tool_choice: 'auto' })
-  })
-  if (!res.ok) throw new Error(`AI 请求失败 (${res.status}): ${await res.text()}`)
-  const data = await res.json()
-  const msg = data.choices?.[0]?.message
-  if (!msg) throw new Error('AI 返回为空')
-  return { role: msg.role || 'assistant', content: msg.content || '', tool_calls: msg.tool_calls }
-}
-
 // ── 流式调用（用于最终显示，需调用方传 onText 回调） ──
 async function callAIStream(
   messages: AIChatMessage[],
