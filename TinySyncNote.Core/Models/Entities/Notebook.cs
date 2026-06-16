@@ -7,6 +7,7 @@ public class Notebook
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public int SortOrder { get; set; }
+    public bool IsSystem { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

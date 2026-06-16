@@ -94,6 +94,39 @@ export interface ConflictResponse {
   resolutionStrategy?: string
 }
 
+// 分享
+export interface NoteShare {
+  id: string
+  noteId: string
+  ownerUserId: string
+  ownerUsername: string
+  sharedWithUserId: string
+  sharedNoteCopyId: string
+  sharedAt: string
+}
+
+export interface PublicShareLink {
+  id: string
+  noteId: string
+  token: string
+  shareUrl: string
+  createdAt: string
+  expiresAt: string | null
+  isActive: boolean
+}
+
+export interface UserSearchItem {
+  id: string
+  username: string
+}
+
+export interface SharedNoteView {
+  title: string
+  htmlContent: string
+  createdAt: string
+  updatedAt: string
+}
+
 // 冲突列表项
 export interface ConflictListItem {
   id: string

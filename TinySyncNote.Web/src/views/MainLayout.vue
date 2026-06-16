@@ -357,15 +357,21 @@ watch(() => route.query.nb, (nb) => {
 .nav-compact .col-notes { flex: 1; min-width: 0; }
 
 /* ── 目录树 ── */
-.tree-node { display: flex; align-items: center; gap: 3px; padding: 5px 10px; cursor: pointer; font-size: 12px; transition: background 0.12s; }
+.tree-node { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; font-size: 12px; transition: background 0.12s; }
 .tree-node:hover { background: var(--el-fill-color-light); }
 .tree-node.selected { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 .expand-icon { flex-shrink: 0; cursor: pointer; color: var(--el-text-color-secondary); }
 .expand-ph { width: 11px; flex-shrink: 0; }
-.node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0; }
 .nb { font-size: 10px; color: var(--el-text-color-secondary); background: var(--el-fill-color); padding: 0 4px; border-radius: 5px; flex-shrink: 0; }
-.node-actions { display: none; gap: 2px; flex-shrink: 0; }
-.tree-node:hover .node-actions { display: flex; }
+.node-actions { display: flex; gap: 2px; flex-shrink: 0; margin-left: auto; }
+@media (hover: hover) {
+  .node-actions { visibility: hidden; }
+  .tree-node:hover .node-actions { visibility: visible; }
+}
+@media (hover: none) {
+  .node-actions { opacity: 0.5; }
+}
 
 /* ── 笔记列表 ── */
 .note-item {
@@ -374,9 +380,15 @@ watch(() => route.query.nb, (nb) => {
 .note-item:hover { background: var(--el-fill-color-light); }
 .note-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 .note-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.note-del-btn { flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
-.note-item:hover .note-del-btn,
-.note-del-btn:focus { opacity: 1; }
+.note-del-btn { flex-shrink: 0; }
+@media (hover: hover) {
+  .note-del-btn { opacity: 0; }
+  .note-item:hover .note-del-btn { opacity: 1; }
+}
+@media (hover: none) {
+  .note-del-btn { opacity: 0.4; }
+  .note-del-btn:active { opacity: 1; }
+}
 
 /* ── 编辑模式 ── */
 .nav-compact {

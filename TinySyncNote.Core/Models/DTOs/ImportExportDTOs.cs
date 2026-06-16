@@ -7,6 +7,13 @@ public class ExportNoteResult
     public string ContentType { get; set; } = "text/markdown";
 }
 
+public class ExportNoteHtmlResult
+{
+    public string FileName { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "text/html";
+}
+
 public class ImportResult
 {
     public int NotesImported { get; set; }

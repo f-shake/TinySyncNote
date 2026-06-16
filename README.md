@@ -35,6 +35,7 @@
 | 📂 **笔记本 + 分类** | 双层目录结构，支持无限层级子分类 |
 | 🔐 **用户认证** | JWT + Refresh Token 认证体系 |
 | 📤 **导入/导出** | 导出为 Markdown/ZIP，批量导入笔记 |
+| 🔗 **笔记分享** | 站内分享给其他用户、生成公开链接（支持过期） |
 | 🗄️ **多数据库** | 开发环境 SQLite，生产环境 PostgreSQL / MySQL |
 
 ## 🛠 技术栈
@@ -188,10 +189,16 @@ bash scripts/switch-to-mysql.sh
 | `/api/conflicts/{id}/resolve` | POST | 解决冲突 |
 | `/api/notes/{noteId}/snapshots` | GET/POST | 快照列表/创建 |
 | `/api/notes/{noteId}/snapshots/{id}/restore` | POST | 恢复快照 |
-| `/api/export/note/{id}` | GET | 导出笔记为 MD |
+| `/api/export/note/{id}/markdown` | GET | 导出笔记为纯 MD（无 YAML 头部） |
+| `/api/export/note/{id}/html` | GET | 导出笔记为渲染 HTML（支持 `?theme=dark`） |
 | `/api/export/notebook/{id}` | GET | 导出笔记本为 ZIP |
 | `/api/import/markdown` | POST | 导入 MD 文件 |
 | `/api/import/zip` | POST | 导入 ZIP 压缩包 |
+| `/api/users/search?q=` | GET | 搜索用户 |
+| `/api/share/note/{id}` | POST | 分享笔记给其他用户 |
+| `/api/share/note/{id}/public` | POST/GET | 创建/查询公开分享链接 |
+| `/api/share/public/{shareId}` | DELETE | 撤销公开链接 |
+| `/api/share/{token}` | GET | 查看公开分享的笔记（无需认证） |
 | `/hubs/sync` | WebSocket | SignalR Sync Hub |
 
 ## 📁 项目结构
@@ -211,7 +218,10 @@ TinySyncNote/
 │       ├── SnapshotService.cs   # 快照管理
 │       ├── NotebookService.cs   # 笔记本 CRUD
 │       ├── CategoryService.cs   # 分类 CRUD + 树形结构
-│       └── ImportExportService.cs
+│       ├── ImportExportService.cs # 导入导出（MD + HTML）
+│       ├── ShareService.cs      # 站内分享
+│       ├── PublicShareService.cs # 公开链接
+│       └── UserService.cs       # 用户搜索
 ├── TinySyncNote.Api/            # Web API 层
 │   ├── Controllers/             # REST 控制器
 │   ├── Hubs/SyncHub.cs          # SignalR Hub

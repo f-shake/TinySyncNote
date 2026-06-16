@@ -56,6 +56,12 @@ const router = createRouter({
       ]
     },
     {
+      path: '/share/:token',
+      name: 'SharedNote',
+      component: () => import('../views/SharedNoteView.vue'),
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }

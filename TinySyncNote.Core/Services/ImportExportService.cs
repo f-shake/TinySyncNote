@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using Markdig;
 using Microsoft.EntityFrameworkCore;
 using TinySyncNote.Core.Data;
 using TinySyncNote.Core.Models.DTOs;
@@ -10,6 +11,7 @@ namespace TinySyncNote.Core.Services;
 public interface IImportExportService
 {
     Task<ExportNoteResult> ExportNoteAsync(Guid noteId, Guid userId);
+    Task<ExportNoteHtmlResult> ExportNoteAsHtmlAsync(Guid noteId, Guid userId, string theme = "light");
     Task<byte[]> ExportNotebookAsync(Guid notebookId, Guid userId);
     Task<ImportResult> ImportMarkdownAsync(Guid categoryId, Guid userId, string fileName, Stream content);
     Task<ImportResult> ImportZipAsync(Guid notebookId, Guid userId, Stream zipStream);
@@ -21,7 +23,7 @@ public class ImportExportService : IImportExportService
 
     public ImportExportService(AppDbContext db) => _db = db;
 
-    // ── 单篇笔记 → Markdown ──
+    // ── 单篇笔记 → Markdown（无 YAML 头部） ──
     public async Task<ExportNoteResult> ExportNoteAsync(Guid noteId, Guid userId)
     {
         var note = await _db.Notes
@@ -32,17 +34,62 @@ public class ImportExportService : IImportExportService
         await VerifyNotebookAccess(note.Category.NotebookId, userId);
 
         var safeName = SanitizeFileName(note.Title);
-        var md = BuildMarkdownWithFrontMatter(note.Title, note.Content, note.CreatedAt, note.UpdatedAt, note.Version);
 
         return new ExportNoteResult
         {
             FileName = $"{safeName}.md",
-            Content = md,
+            Content = note.Content,
             ContentType = "text/markdown"
         };
     }
 
-    // ── 整个笔记本 → ZIP ──
+    // ── 单篇笔记 → 渲染 HTML ──
+    public async Task<ExportNoteHtmlResult> ExportNoteAsHtmlAsync(Guid noteId, Guid userId, string theme = "light")
+    {
+        var note = await _db.Notes
+            .Include(n => n.Category)
+            .FirstOrDefaultAsync(n => n.Id == noteId)
+            ?? throw new KeyNotFoundException("笔记不存在");
+
+        await VerifyNotebookAccess(note.Category.NotebookId, userId);
+
+        var safeName = SanitizeFileName(note.Title);
+        var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        var bodyHtml = Markdig.Markdown.ToHtml(note.Content, pipeline);
+
+        var isDark = theme == "dark";
+        var bg = isDark ? "#1a1a1a" : "#fff";
+        var fg = isDark ? "#e0e0e0" : "#333";
+        var codeBg = isDark ? "#2a2a2a" : "#f4f4f4";
+        var border = isDark ? "#444" : "#ddd";
+        var blockquoteColor = isDark ? "#aaa" : "#666";
+
+        var html = $"<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n" +
+            $"<meta charset=\"UTF-8\">\n<title>{EscapeHtml(note.Title)}</title>\n" +
+            $"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n" +
+            $"<style>\n" +
+            $"body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; " +
+            $"max-width: 800px; margin: 0 auto; padding: 20px; color: {fg}; background: {bg}; line-height: 1.6; }}\n" +
+            $"h1, h2, h3, h4, h5, h6 {{ margin-top: 1.5em; margin-bottom: 0.5em; }}\n" +
+            $"code {{ background: {codeBg}; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }}\n" +
+            $"pre {{ background: {codeBg}; padding: 12px; border-radius: 6px; overflow-x: auto; }}\n" +
+            $"pre code {{ background: none; padding: 0; }}\n" +
+            $"blockquote {{ border-left: 4px solid {border}; margin: 0; padding: 0 16px; color: {blockquoteColor}; }}\n" +
+            $"table {{ border-collapse: collapse; width: 100%; }}\n" +
+            $"th, td {{ border: 1px solid {border}; padding: 8px 12px; text-align: left; }}\n" +
+            $"th {{ background: {codeBg}; }}\n" +
+            $"img {{ max-width: 100%; }}\n" +
+            $"</style>\n</head>\n<body>\n" +
+            $"<article class=\"markdown-body\">{bodyHtml}</article>\n</body>\n</html>";
+
+        return new ExportNoteHtmlResult
+        {
+            FileName = $"{safeName}.html",
+            Content = html
+        };
+    }
+
+    // ── 整个笔记本 → ZIP（无 YAML 头部） ──
     public async Task<byte[]> ExportNotebookAsync(Guid notebookId, Guid userId)
     {
         var notebook = await _db.Notebooks
@@ -72,8 +119,7 @@ public class ImportExportService : IImportExportService
 
                 var entry = archive.CreateEntry(entryName);
                 using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
-                await writer.WriteAsync(BuildMarkdownWithFrontMatter(
-                    note.Title, note.Content, note.CreatedAt, note.UpdatedAt, note.Version));
+                await writer.WriteAsync(note.Content);
             }
         }
 
@@ -163,17 +209,8 @@ public class ImportExportService : IImportExportService
 
     // ── 辅助方法 ──
 
-    private string BuildMarkdownWithFrontMatter(string title, string content,
-        DateTime createdAt, DateTime updatedAt, int version)
-    {
-        return $"---\n" +
-               $"title: \"{title.Replace("\"", "\\\"")}\"\n" +
-               $"created_at: {createdAt:O}\n" +
-               $"updated_at: {updatedAt:O}\n" +
-               $"version: {version}\n" +
-               $"---\n\n" +
-               $"{content}";
-    }
+    private static string EscapeHtml(string text)
+        => System.Net.WebUtility.HtmlEncode(text);
 
     private (string title, string body) ParseMarkdown(string text, string defaultTitle)
     {

@@ -291,16 +291,16 @@ async function handleDeleteNote(noteId: string, noteTitle: string) {
 
 .note-delete-btn {
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
 }
 
-.note-item:hover .note-delete-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .note-delete-btn { opacity: 0; }
+  .note-item:hover .note-delete-btn { opacity: 1; }
 }
 
-.note-item .note-delete-btn:focus {
-  opacity: 1;
+@media (hover: none) {
+  .note-delete-btn { opacity: 0.4; }
+  .note-delete-btn:active { opacity: 1; }
 }
 
 /* ── 导入对话框 ── */

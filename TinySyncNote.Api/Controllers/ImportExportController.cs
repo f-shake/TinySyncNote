@@ -16,14 +16,14 @@ public class ImportExportController : ControllerBase
 
     private Guid UserId => Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
 
-    /// <summary>导出单篇笔记为 Markdown</summary>
-    [HttpGet("note/{noteId}")]
+    /// <summary>导出单篇笔记为 Markdown（无 YAML 头部）</summary>
+    [HttpGet("note/{noteId}/markdown")]
     public async Task<ActionResult> ExportNote(Guid noteId)
     {
         try
         {
             var result = await _service.ExportNoteAsync(noteId, UserId);
-            return File(
+            return FileWithChineseName(
                 System.Text.Encoding.UTF8.GetBytes(result.Content),
                 result.ContentType,
                 result.FileName
@@ -39,6 +39,37 @@ public class ImportExportController : ControllerBase
         }
     }
 
+    /// <summary>导出单篇笔记为渲染后的 HTML</summary>
+    [HttpGet("note/{noteId}/html")]
+    public async Task<ActionResult> ExportNoteHtml(Guid noteId, [FromQuery] string theme = "light")
+    {
+        try
+        {
+            var result = await _service.ExportNoteAsHtmlAsync(noteId, UserId, theme);
+            return FileWithChineseName(
+                System.Text.Encoding.UTF8.GetBytes(result.Content),
+                result.ContentType,
+                result.FileName
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>支持中文文件名的 File 响应</summary>
+    private ActionResult FileWithChineseName(byte[] bytes, string contentType, string fileName)
+    {
+        var encoded = Uri.EscapeDataString(fileName);
+        Response.Headers["Content-Disposition"] = $"attachment; filename*=UTF-8''{encoded}";
+        return File(bytes, contentType);
+    }
+
     /// <summary>导出整个笔记本为 ZIP</summary>
     [HttpGet("notebook/{notebookId}")]
     public async Task<ActionResult> ExportNotebook(Guid notebookId)
@@ -46,7 +77,7 @@ public class ImportExportController : ControllerBase
         try
         {
             var bytes = await _service.ExportNotebookAsync(notebookId, UserId);
-            return File(bytes, "application/zip", $"notebook-{notebookId}.zip");
+            return File(bytes, "application/zip");
         }
         catch (KeyNotFoundException ex)
         {

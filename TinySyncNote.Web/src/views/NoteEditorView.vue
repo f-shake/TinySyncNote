@@ -5,12 +5,13 @@ import { useNoteStore } from '../stores/note'
 import { useSnapshotStore } from '../stores/snapshot'
 import type { NoteSnapshot } from '../types'
 import { ElMessage, ElNotification } from 'element-plus'
-import { ArrowLeft, Delete, Download, Clock, Upload } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Download, Clock, Share } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
 import http from '../utils/http'
+import ShareDialog from '../components/ShareDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +25,7 @@ const saving = ref(false)
 const loaded = ref(false)
 const remoteUpdateBanner = ref(false)
 const showSnapshotDrawer = ref(false)
+const showShareDialog = ref(false)
 const previewSnapshot = ref<NoteSnapshot | null>(null)
 const dirty = ref(false)   // 是否有未保存修改
 
@@ -365,35 +367,9 @@ function formatCharCount(length: number | undefined): string {
   return `${length} 字`
 }
 
-// ── 导出 ──
-async function exportAsMarkdown() {
-  try {
-    const res = await http.get(`/api/export/note/${noteId.value}`, {
-      responseType: 'blob'
-    })
-    const blob = new Blob([res.data], { type: 'text/markdown' })
-    downloadBlob(blob, getFilenameFromContentDisposition(res) || `note-${noteId.value}.md`)
-  } catch {
-    ElMessage.error('导出失败')
-  }
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-function getFilenameFromContentDisposition(res: any): string | null {
-  const header = res.headers?.['content-disposition']
-  if (!header) return null
-  const match = header.match(/filename\*?=(?:UTF-8'')?([^;\s]+)/i)
-  return match ? decodeURIComponent(match[1]) : null
+// ── 分享 ──
+function openShareDialog() {
+  showShareDialog.value = true
 }
 
 // 触发防抖保存（标题变化）
@@ -444,7 +420,7 @@ function onTitleChange() {
         </el-tag>
 
         <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
-        <el-button text :icon="Upload" @click="exportAsMarkdown">导出</el-button>
+        <el-button text :icon="Share" @click="openShareDialog">分享</el-button>
       </div>
     </div>
 
@@ -467,6 +443,15 @@ function onTitleChange() {
       <div ref="editorRef" class="vditor-wrap" />
     </div>
   </div>
+
+  <!-- ═══ 分享对话框 ═══ -->
+  <ShareDialog
+    v-if="showShareDialog"
+    :note-id="noteId"
+    :note-title="title"
+    :on-save="handleSave"
+    @close="showShareDialog = false"
+  />
 
   <!-- ═══ 快照历史抽屉 ═══ -->
   <el-drawer

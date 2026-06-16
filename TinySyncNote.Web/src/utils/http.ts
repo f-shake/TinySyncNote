@@ -66,6 +66,12 @@ http.interceptors.response.use(
       return Promise.reject(error)
     }
 
+    // 登录/注册接口的 401 不需要刷新 Token
+    const authPath = originalRequest.url?.replace(http.defaults.baseURL || '', '')
+    if (authPath === '/api/auth/login' || authPath === '/api/auth/register') {
+      return Promise.reject(error)
+    }
+
     // 正在刷新 → 排队等待
     if (isRefreshing) {
       return new Promise(resolve => {

@@ -14,6 +14,8 @@ public class AppDbContext : DbContext
     public DbSet<NoteSnapshot> NoteSnapshots => Set<NoteSnapshot>();
     public DbSet<NoteConflict> NoteConflicts => Set<NoteConflict>();
     public DbSet<SyncTracking> SyncTrackings => Set<SyncTracking>();
+    public DbSet<NoteShare> NoteShares => Set<NoteShare>();
+    public DbSet<PublicShare> PublicShares => Set<PublicShare>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,10 +35,12 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.IsSystem).HasDefaultValue(false);
             entity.HasOne(e => e.User)
                   .WithMany(u => u.Notebooks)
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.UserId, e.IsSystem });
         });
 
         // Category
@@ -92,6 +96,29 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.EntityType).HasMaxLength(50).IsRequired();
             entity.HasIndex(e => new { e.EntityType, e.EntityId });
+        });
+
+        // NoteShare
+        modelBuilder.Entity<NoteShare>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Note)
+                  .WithMany()
+                  .HasForeignKey(e => e.NoteId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.NoteId, e.SharedWithUserId }).IsUnique();
+        });
+
+        // PublicShare
+        modelBuilder.Entity<PublicShare>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Token).IsUnique();
+            entity.Property(e => e.Token).HasMaxLength(128).IsRequired();
+            entity.HasOne(e => e.Note)
+                  .WithMany()
+                  .HasForeignKey(e => e.NoteId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
