@@ -5,7 +5,7 @@ import { useNoteStore } from '../stores/note'
 import { useSnapshotStore } from '../stores/snapshot'
 import type { NoteSnapshot } from '../types'
 import { ElMessage, ElNotification } from 'element-plus'
-import { Delete, Clock, Share, Promotion } from '@element-plus/icons-vue'
+import { Delete, Clock, Share, Promotion, ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
@@ -136,7 +136,16 @@ onNoteDeleted((evt) => {
 })
 
 onMounted(async () => {
+  // 等待路由初始导航完成，确保 route.params 已正确解析
+  // （否则刷新页面时惰性加载的组件可能拿到 undefined 的 params）
+  await router.isReady()
+
   noteId.value = route.params.id as string
+  if (!noteId.value) {
+    ElMessage.error('笔记ID无效')
+    router.push('/notebooks')
+    return
+  }
 
   await loadNote()
   loadAISettings()
@@ -148,8 +157,9 @@ onBeforeUnmount(() => {
   vditor?.destroy()
 })
 
+// 仅在 onMounted 之后的 params 变化才触发 — 避免与首次挂载的 loadNote 并发
 watch(() => route.params.id, async (id) => {
-  if (id && typeof id === 'string' && id !== noteId.value) {
+  if (id && typeof id === 'string' && noteId.value && id !== noteId.value) {
     noteId.value = id
     if (saveTimer) clearTimeout(saveTimer)
     vditor?.destroy()
@@ -160,6 +170,7 @@ watch(() => route.params.id, async (id) => {
 })
 
 async function loadNote() {
+  if (!noteId.value) return // 路由尚未就绪时跳过（由 watch 兜底）
   try {
     const note = await noteStore.fetchById(noteId.value)
     if (!note) { router.push('/notebooks'); return }
@@ -176,14 +187,18 @@ async function loadNote() {
     loaded.value = true
     await nextTick()
     initEditor(note.content)
-  } catch {
-    ElMessage.error('加载笔记失败')
+  } catch (err: any) {
+    const detail = err?.response?.status
+      ? `HTTP ${err.response.status}`
+      : err?.message || '未知错误'
+    ElMessage.error(`加载笔记失败 (${detail})`)
     router.push('/notebooks')
   }
 }
 
 function initEditor(content: string) {
   if (!editorRef.value) return
+  if (vditor) return // 防止并发时重复初始化
 
   const isDark = document.documentElement.classList.contains('dark')
   const savedMode = (localStorage.getItem('vditorMode') as 'sv' | 'ir' | 'wysiwyg') || 'ir'
@@ -398,6 +413,13 @@ function openAIChat() {
   showAIChat.value = true
 }
 
+// ── 移动端返回 ──
+function goBack() {
+  const nb = route.query.nb as string
+  if (nb) router.push(`/notebook/${nb}`)
+  else router.push('/notebooks')
+}
+
 const editorActions = computed(() => ({
   getNoteContent: () => vditor?.getValue() || '',
   replaceNoteContent: (content: string) => {
@@ -432,6 +454,12 @@ function onTitleChange() {
   <div class="note-editor-view" v-if="loaded">
     <!-- 顶栏 -->
     <div class="editor-toolbar">
+      <el-button
+        class="mobile-back-btn"
+        text
+        :icon="ArrowLeft"
+        @click="goBack"
+      />
       <div class="title-area">
         <el-input
           v-model="title"
@@ -779,6 +807,11 @@ function onTitleChange() {
 
 @media (max-width: 720px) {
   .toolbar-actions .el-tag { display: none; }
+  .mobile-back-btn { display: inline-flex; }
+}
+
+@media (min-width: 721px) {
+  .mobile-back-btn { display: none; }
 }
 
 @media (max-width: 480px) {

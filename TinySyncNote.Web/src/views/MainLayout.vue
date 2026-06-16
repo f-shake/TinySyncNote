@@ -95,7 +95,9 @@ function handleMoreCommand(cmd: string) {
 
       <!-- ── 编辑模式：树状导航（1/3）+ 编辑器（2/3） ── -->
       <template v-else-if="isEditor">
-        <NoteEditorSidebar />
+        <div class="editor-sidebar-wrap">
+          <NoteEditorSidebar />
+        </div>
         <main class="editor-area">
           <router-view />
         </main>
@@ -148,5 +150,6 @@ function handleMoreCommand(cmd: string) {
 
 @media (max-width: 720px) {
   .col-notes { flex: 1; }
+  .editor-sidebar-wrap { display: none; }
 }
 </style>

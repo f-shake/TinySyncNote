@@ -120,9 +120,12 @@ function handleNodeClick(data: NoteTreeData) {
 
 // ── 选中分类时自动展开 ──
 watch(() => noteStore.selectedCategoryId, (newId) => {
-  if (newId && treeRef.value) {
-    treeRef.value.expand(`cat:${newId}`)
-  }
+  if (!newId || !treeRef.value) return
+  // el-tree 没有公开的 expand 方法，通过内部 store 展开节点
+  try {
+    const node = (treeRef.value as any).store?.nodesMap?.[`cat:${newId}`]
+    if (node) node.expanded = true
+  } catch { /* tree 尚未就绪 */ }
 })
 
 // ── 返回按钮高度同步 ──
