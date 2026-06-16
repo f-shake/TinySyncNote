@@ -5,12 +5,11 @@ import { useNoteStore } from '../stores/note'
 import { useSnapshotStore } from '../stores/snapshot'
 import type { NoteSnapshot } from '../types'
 import { ElMessage, ElNotification } from 'element-plus'
-import { ArrowLeft, Delete, Download, Clock, Share } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Clock, Share } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
-import http from '../utils/http'
 import ShareDialog from '../components/ShareDialog.vue'
 
 const route = useRoute()
@@ -716,4 +715,50 @@ function onTitleChange() {
   .toolbar-actions .el-button { padding: 4px 4px; }
   .toolbar-actions { gap: 2px; }
 }
+
+</style>
+<style>
+html.dark .vditor-reset pre,
+html.dark .vditor-reset .hljs,
+html.dark .vditor-ir__marker--pre,
+html.dark .vditor-wysiwyg pre,
+html.dark .vditor-wysiwyg code {
+  background: #1e1e1e !important;
+  color: #d4d4d4 !important;
+}
+/* 行内代码 —— 柔和暗色 */
+html.dark .vditor-reset code:not(.hljs):not([class*="language-"]),
+html.dark .vditor-ir__marker--info code,
+html.dark .vditor-ir__marker code {
+  background: #2d2d2d !important;
+  color: #ce9178 !important;
+  border: 1px solid #3a3a3a !important;
+  padding: 1px 5px !important;
+  border-radius: 3px !important;
+}
+/* 编辑器内围栏代码块 —— 去掉暗蓝底 */
+html.dark .vditor-ir__marker--pre {
+  background: #252526 !important;
+  border-color: #3a3a3a !important;
+}
+html.dark .vditor-ir__marker--pre .vditor-ir__marker {
+  background: transparent !important;
+}
+html.dark .vditor-copy span { color: #ccc !important; }
+html.dark .vditor-linenumber__rows { background: #1e1e1e !important; }
+/* highlight.js VS Code Dark+ */
+html.dark .hljs-keyword { color: #569cd6 !important; }
+html.dark .hljs-string { color: #ce9178 !important; }
+html.dark .hljs-comment, html.dark .hljs-quote { color: #6a9955 !important; }
+html.dark .hljs-number { color: #b5cea8 !important; }
+html.dark .hljs-built_in { color: #4ec9b0 !important; }
+html.dark .hljs-attr, html.dark .hljs-attribute { color: #9cdcfe !important; }
+html.dark .hljs-selector-tag, html.dark .hljs-tag, html.dark .hljs-name, html.dark .hljs-literal { color: #569cd6 !important; }
+html.dark .hljs-selector-id, html.dark .hljs-selector-class, html.dark .hljs-section, html.dark .hljs-deletion { color: #e06c75 !important; }
+html.dark .hljs-type { color: #4ec9b0 !important; }
+html.dark .hljs-addition { color: #6a9955 !important; }
+html.dark .hljs-params { color: #d4d4d4 !important; }
+html.dark .hljs-meta { color: #dcdcaa !important; }
+html.dark .hljs-link { color: #569cd6 !important; text-decoration: underline; }
+html.dark .hljs-title, html.dark .hljs-title.function_ { color: #dcdcaa !important; }
 </style>

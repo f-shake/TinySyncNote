@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useShareStore } from '../stores/share'
 import { ElMessage } from 'element-plus'
-import { Download, Link, User, CopyDocument } from '@element-plus/icons-vue'
+import { Download, Link, User } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   noteId: string
@@ -49,7 +49,6 @@ async function handleExportHtml() {
 // ── Tab 3: 分享给用户 ──
 const searchQuery = ref('')
 const selectedUser = ref<{ id: string; username: string } | null>(null)
-let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 function onSearchSelect(item: { id: string; username: string }) {
   selectedUser.value = item

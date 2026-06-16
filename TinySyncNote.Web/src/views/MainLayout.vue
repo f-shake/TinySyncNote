@@ -10,7 +10,7 @@ import {
   FolderOpened, Document, ArrowRight, ArrowDown, Plus, Edit, Delete
 } from '@element-plus/icons-vue'
 import type { Category } from '../types'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 
 interface FlatItem {
   id: string
@@ -293,7 +293,7 @@ watch(() => route.query.nb, (nb) => {
                   type="danger"
                   size="small"
                   class="note-del-btn"
-                  @click="e => handleDeleteNote(e, n.id, n.title)"
+                  @click="(e: MouseEvent) => handleDeleteNote(e, n.id, n.title)"
                 />
               </div>
             </div>

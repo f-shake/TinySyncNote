@@ -29,10 +29,8 @@ public class PublicShareController : ControllerBase
             var result = await _publicShareService.CreatePublicLinkAsync(noteId, UserId, request?.ExpiresAt);
             var frontendUrl = _configuration.GetValue<string>("Frontend:Url");
             var frontendBase = _configuration.GetValue<string>("Frontend:BasePath") ?? "/";
-            if (!string.IsNullOrEmpty(frontendUrl))
-                result.ShareUrl = $"{frontendUrl.TrimEnd('/')}{frontendBase.TrimEnd('/')}/share/{result.Token}";
-            else
-                result.ShareUrl = $"{frontendBase.TrimEnd('/')}/share/{result.Token}";
+            var hostUrl = !string.IsNullOrEmpty(frontendUrl) ? frontendUrl.TrimEnd('/') : $"{Request.Scheme}://{Request.Host}";
+            result.ShareUrl = $"{hostUrl}{frontendBase.TrimEnd('/')}/share/{result.Token}";
             return Ok(result);
         }
         catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }

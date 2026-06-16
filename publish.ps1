@@ -30,7 +30,7 @@ Copy-Item -Recurse (Join-Path $webDir "dist\*") -Destination $wwwrootDir
 Write-Host "[3/4] 发布后端..." -ForegroundColor Yellow
 if (Test-Path $publishDir) { Remove-Item -Recurse -Force $publishDir }
 Set-Location $apiDir
-dotnet publish -c Release -o $publishDir --nologo
+dotnet publish -c Release -o $publishDir --nologo /p:PublishSingleFile=true --self-contained false
 if ($LASTEXITCODE -ne 0) { throw "后端发布失败" }
 
 # 4. 清理前端临时文件
