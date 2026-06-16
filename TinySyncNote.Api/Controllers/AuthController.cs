@@ -10,10 +10,12 @@ namespace TinySyncNote.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IConfiguration configuration)
     {
         _authService = authService;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -51,6 +53,16 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// 获取注册功能状态
+    /// </summary>
+    [HttpGet("registration-status")]
+    public ActionResult<object> GetRegistrationStatus()
+    {
+        var enabled = _configuration["Registration:Enabled"] == "true";
+        return Ok(new { enabled });
+    }
+
+    /// <summary>
     /// 刷新 Token
     /// </summary>
     [HttpPost("refresh")]
@@ -76,13 +88,11 @@ public class AuthController : ControllerBase
     {
         var userId = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
         var username = User.FindFirst(System.Security.Claims.ClaimTypes.Name)!.Value;
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)!.Value;
 
         return Ok(new UserInfo
         {
             Id = userId,
-            Username = username,
-            Email = email
+            Username = username
         });
     }
 }

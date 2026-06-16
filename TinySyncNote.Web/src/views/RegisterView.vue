@@ -2,19 +2,18 @@
 import { reactive } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Message } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 
 const form = reactive({
   username: '',
-  email: '',
   password: '',
   confirmPassword: ''
 })
 
 async function handleRegister() {
-  if (!form.username || !form.email || !form.password) {
+  if (!form.username || !form.password) {
     ElMessage.warning('请填写所有必填字段')
     return
   }
@@ -29,7 +28,6 @@ async function handleRegister() {
   try {
     await authStore.register({
       username: form.username,
-      email: form.email,
       password: form.password
     })
   } catch (err: any) {
@@ -57,15 +55,6 @@ async function handleRegister() {
             v-model="form.username"
             placeholder="3-50 个字符"
             :prefix-icon="User"
-          />
-        </el-form-item>
-
-        <el-form-item label="邮箱" required>
-          <el-input
-            v-model="form.email"
-            type="email"
-            placeholder="请输入邮箱地址"
-            :prefix-icon="Message"
           />
         </el-form-item>
 
@@ -187,5 +176,37 @@ html.dark .register-footer {
 
 html.dark .register-footer a {
   color: #5ea6f0;
+}
+
+/* ── 移动端：取消卡片样式 ── */
+@media (max-width: 768px) {
+  .register-container {
+    align-items: flex-start;
+    padding-top: 60px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+
+  .register-card {
+    width: 100%;
+    padding: 24px 20px;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  html.dark .register-card {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .app-title { color: #fff; }
+  .app-subtitle { color: rgba(255,255,255,0.8); }
+  .register-footer { color: rgba(255,255,255,0.7); }
+  .register-footer a { color: #8ab4ff; }
+
+  html.dark .app-title { color: #fff; }
+  html.dark .app-subtitle { color: rgba(255,255,255,0.8); }
+  html.dark .register-footer { color: rgba(255,255,255,0.7); }
+  html.dark .register-footer a { color: #8ab4ff; }
 }
 </style>

@@ -12,6 +12,7 @@ public interface ISnapshotService
     Task<SnapshotResponse> GetByIdAsync(Guid noteId, Guid snapshotId, Guid userId);
     Task<SnapshotResponse> CreateAsync(Guid noteId, Guid userId, SnapshotType snapshotType = SnapshotType.Manual);
     Task<SnapshotResponse> RestoreAsync(Guid noteId, Guid snapshotId, Guid userId);
+    Task DeleteAsync(Guid noteId, Guid snapshotId, Guid userId);
 }
 
 public class SnapshotService : ISnapshotService
@@ -33,7 +34,8 @@ public class SnapshotService : ISnapshotService
                 Title = s.Title,
                 Version = s.Version,
                 SnapshotType = s.SnapshotType.ToString(),
-                SnapshotAt = s.SnapshotAt
+                SnapshotAt = s.SnapshotAt,
+                ContentLength = s.Content.Length
             })
             .ToListAsync();
     }
@@ -110,6 +112,24 @@ public class SnapshotService : ISnapshotService
         await _db.SaveChangesAsync();
 
         return ToResponse(snapshot);
+    }
+
+    public async Task DeleteAsync(Guid noteId, Guid snapshotId, Guid userId)
+    {
+        var note = await _db.Notes
+            .Include(n => n.Category).ThenInclude(c => c.Notebook)
+            .FirstOrDefaultAsync(n => n.Id == noteId)
+            ?? throw new KeyNotFoundException("笔记不存在");
+
+        if (note.Category.Notebook.UserId != userId)
+            throw new UnauthorizedAccessException("无权操作");
+
+        var snapshot = await _db.NoteSnapshots
+            .FirstOrDefaultAsync(s => s.Id == snapshotId && s.NoteId == noteId)
+            ?? throw new KeyNotFoundException("快照不存在");
+
+        _db.NoteSnapshots.Remove(snapshot);
+        await _db.SaveChangesAsync();
     }
 
     private async Task VerifyNoteAccess(Guid noteId, Guid userId)

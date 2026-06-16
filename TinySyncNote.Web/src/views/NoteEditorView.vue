@@ -10,6 +10,7 @@ import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
+import http from '../utils/http'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +26,17 @@ const remoteUpdateBanner = ref(false)
 const showSnapshotDrawer = ref(false)
 const previewSnapshot = ref<NoteSnapshot | null>(null)
 const dirty = ref(false)   // 是否有未保存修改
+
+const AUTO_SAVE_KEY = 'tsn_autosave_interval'
+
+function getAutoSaveInterval(): number {
+  const saved = localStorage.getItem(AUTO_SAVE_KEY)
+  if (saved) {
+    const n = parseInt(saved, 10)
+    if (n >= 2 && n <= 300) return n * 1000
+  }
+  return 5000
+}
 
 let vditor: Vditor | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -88,17 +100,25 @@ onNoteUpdated((evt) => {
   if (pendingSaveVersion > 0 && evt.newVersion === pendingSaveVersion + 1) return
 
   // 情况 C：真正的跨设备修改
-  remoteUpdateBanner.value = true
-  ElNotification({
-    title: '笔记已更新',
-    message: '其他设备修改了此笔记',
-    type: 'info',
-    duration: 4000
-  })
+  if (dirty.value) {
+    // 本设备有未保存的修改 → 提示用户手动处理
+    remoteUpdateBanner.value = true
+    ElNotification({
+      title: '笔记已更新',
+      message: '其他设备修改了此笔记',
+      type: 'info',
+      duration: 4000
+    })
+  } else {
+    // 本设备无修改 → 静默更新到云端版本
+    reloadNote()
+  }
 })
 
 onNoteDeleted((evt) => {
   if (evt.noteId === noteId.value) {
+    // 自己发起的删除不重复提示
+    if (noteStore.deletingNoteId === evt.noteId) return
     ElNotification({
       title: '笔记已删除',
       message: '此笔记已被其他设备删除',
@@ -138,6 +158,12 @@ async function loadNote() {
     if (!note) { router.push('/notebooks'); return }
     title.value = note.title
     lastSavedVersion = note.version  // 同步当前版本，防止 SignalR 事件误判
+
+    // 选中笔记所在目录，让侧栏显示笔记列表（直接进入笔记时有用）
+    if (noteStore.selectedCategoryId !== note.categoryId) {
+      noteStore.selectedCategoryId = note.categoryId
+      noteStore.fetchByCategory(note.categoryId)
+    }
 
     // 先显示 DOM，再初始化编辑器
     loaded.value = true
@@ -197,7 +223,7 @@ function initEditor(content: string) {
       dirty.value = true
       // 防抖自动保存
       if (saveTimer) clearTimeout(saveTimer)
-      saveTimer = setTimeout(autoSave, 3000)
+      saveTimer = setTimeout(autoSave, getAutoSaveInterval())
     },
     after: () => {
       // 监听 html 标签 class 变化，同步 Vditor 主题
@@ -262,18 +288,9 @@ async function handleSave() {
   await autoSave()
 }
 
-async function handleDelete() {
-  try {
-    await ElMessageBox.confirm('确定删除这篇笔记？删除后不可恢复。', '删除确认', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    await noteStore.remove(noteId.value)
-    ElMessage.success('笔记已删除')
-    router.back()
-  } catch {
-    // 取消
+function handleSaveTagClick() {
+  if (dirty.value && !saving.value) {
+    handleSave()
   }
 }
 
@@ -321,18 +338,69 @@ async function handleRestoreSnapshot(snapshot: NoteSnapshot) {
 
 function previewSnapshotItem(snapshot: NoteSnapshot) {
   previewSnapshot.value = snapshot
+  // 加载正文（列表接口不返回 content）
+  if (!snapshot.content && snapshot.id) {
+    snapshotStore.fetchById(noteId.value, snapshot.id).then(detail => {
+      if (detail) previewSnapshot.value = detail
+    })
+  }
+}
+
+async function handleDeleteSnapshot(snapshot: NoteSnapshot) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除 v${snapshot.version}（${new Date(snapshot.snapshotAt).toLocaleString()}）的快照？删除后不可恢复。`,
+      '删除快照',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    await snapshotStore.remove(noteId.value, snapshot.id)
+    if (previewSnapshot.value?.id === snapshot.id) {
+      previewSnapshot.value = null
+    }
+  } catch { /* cancelled */ }
+}
+
+function formatCharCount(length: number | undefined): string {
+  if (length === undefined || length === null) return ''
+  return `${length} 字`
 }
 
 // ── 导出 ──
-function exportAsMarkdown() {
-  window.open(`${import.meta.env.VITE_API_BASE_URL || ''}/api/export/note/${noteId.value}`, '_blank')
+async function exportAsMarkdown() {
+  try {
+    const res = await http.get(`/api/export/note/${noteId.value}`, {
+      responseType: 'blob'
+    })
+    const blob = new Blob([res.data], { type: 'text/markdown' })
+    downloadBlob(blob, getFilenameFromContentDisposition(res) || `note-${noteId.value}.md`)
+  } catch {
+    ElMessage.error('导出失败')
+  }
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function getFilenameFromContentDisposition(res: any): string | null {
+  const header = res.headers?.['content-disposition']
+  if (!header) return null
+  const match = header.match(/filename\*?=(?:UTF-8'')?([^;\s]+)/i)
+  return match ? decodeURIComponent(match[1]) : null
 }
 
 // 触发防抖保存（标题变化）
 function onTitleChange() {
   dirty.value = true
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(autoSave, 3000)
+  saveTimer = setTimeout(autoSave, getAutoSaveInterval())
 }
 
 </script>
@@ -369,18 +437,14 @@ function onTitleChange() {
           :type="saving ? 'info' : dirty ? 'warning' : 'success'"
           size="small"
           effect="plain"
+          :style="{ cursor: dirty && !saving ? 'pointer' : 'default' }"
+          @click="handleSaveTagClick"
         >
           {{ saving ? '保存中' : dirty ? '未保存' : '已保存' }}
         </el-tag>
 
         <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
-        <el-button text :icon="Download" @click="handleSave">保存</el-button>
         <el-button text :icon="Upload" @click="exportAsMarkdown">导出</el-button>
-        <el-popconfirm title="确定删除这篇笔记？" @confirm="handleDelete">
-          <template #reference>
-            <el-button text :icon="Delete" type="danger">删除</el-button>
-          </template>
-        </el-popconfirm>
       </div>
     </div>
 
@@ -439,21 +503,39 @@ function onTitleChange() {
               {{ s.snapshotType === 'Manual' ? '手动' : '自动' }}
             </el-tag>
             <span class="snapshot-version">v{{ s.version }}</span>
+            <span class="snapshot-chars">{{ formatCharCount(s.contentLength) }}</span>
             <span class="snapshot-time">{{ new Date(s.snapshotAt).toLocaleString() }}</span>
+            <el-button
+              text
+              size="small"
+              type="danger"
+              :icon="Delete"
+              @click.stop="handleDeleteSnapshot(s)"
+              class="snapshot-delete-btn"
+            />
           </div>
 
-          <div class="snapshot-title">{{ s.title }}</div>
-
           <div v-if="previewSnapshot?.id === s.id" class="snapshot-preview">
-            <div class="preview-content">{{ s.content || '（空）' }}</div>
-            <el-button
-              type="warning"
-              size="small"
-              @click.stop="handleRestoreSnapshot(s)"
-              class="restore-btn"
-            >
-              恢复到此版本
-            </el-button>
+            <div class="preview-content">{{ previewSnapshot?.content || '（加载中...）' }}</div>
+            <div class="snapshot-actions">
+              <el-button
+                type="warning"
+                size="small"
+                @click.stop="handleRestoreSnapshot(s)"
+                class="action-btn"
+              >
+                恢复到此版本
+              </el-button>
+              <el-button
+                type="danger"
+                size="small"
+                :icon="Delete"
+                @click.stop="handleDeleteSnapshot(s)"
+                class="action-btn"
+              >
+                删除
+              </el-button>
+            </div>
           </div>
         </div>
       </div>
@@ -545,19 +627,22 @@ function onTitleChange() {
 }
 
 .snapshot-item {
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  padding: 12px;
+  padding: 10px 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.snapshot-item:last-child {
+  border-bottom: none;
 }
 
 .snapshot-item:hover {
-  border-color: var(--el-color-primary-light-5);
+  background: var(--el-fill-color-light);
 }
 
 .snapshot-item.active {
-  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 
 .snapshot-header {
@@ -573,18 +658,22 @@ function onTitleChange() {
   color: var(--el-color-primary);
 }
 
+.snapshot-chars {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-lighter);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 .snapshot-time {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   margin-left: auto;
 }
 
-.snapshot-title {
-  font-size: 14px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.snapshot-delete-btn {
+  flex-shrink: 0;
 }
 
 .snapshot-preview {
@@ -604,6 +693,15 @@ function onTitleChange() {
   padding: 8px;
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
+}
+
+.snapshot-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  flex: 1;
 }
 
 .restore-btn {

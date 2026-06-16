@@ -7,10 +7,10 @@ import { useNoteStore } from '../stores/note'
 import { useRoute, useRouter } from 'vue-router'
 import {
   WarningFilled, Setting, SwitchButton, Moon, Sunny, MoreFilled,
-  FolderOpened, ArrowRight, ArrowDown, Plus, Edit, Delete
+  FolderOpened, Document, ArrowRight, ArrowDown, Plus, Edit, Delete
 } from '@element-plus/icons-vue'
 import type { Category } from '../types'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 
 interface FlatItem {
   id: string
@@ -121,6 +121,21 @@ function handleDeleteCategory(cat: Category) {
   }).catch(() => {})
 }
 
+async function handleDeleteNote(e: Event, noteId: string, noteTitle: string) {
+  e.stopPropagation()
+  try {
+    await ElMessageBox.confirm(`确定删除「${noteTitle}」？删除后不可恢复。`, '删除笔记', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+    // 删除（noteStore.remove 内部会弹出成功提示）
+    await noteStore.remove(noteId)
+    // 如果编辑器正在显示刚删除的笔记，立即跳走
+    if (route.params.id === noteId) {
+      router.push('/notebooks')
+    }
+  } catch { /* cancelled */ }
+}
+
 function handleMoreCommand(cmd: string) {
   cmd === 'toggle-dark' ? toggleDark() : router.push(cmd)
 }
@@ -181,7 +196,10 @@ watch(() => route.query.nb, (nb) => {
         <div class="browse-panels">
         <div class="col col-cat">
           <div class="col-header">
-            目录
+            <span class="col-header-label">
+              <el-icon :size="14"><FolderOpened /></el-icon>
+              目录
+            </span>
             <el-button text :icon="Plus" size="small" @click="openCreateCategory()" />
           </div>
           <div v-if="categoryStore.tree.length === 0" class="col-empty">
@@ -211,7 +229,12 @@ watch(() => route.query.nb, (nb) => {
         </div>
 
         <div class="col col-notes">
-          <div class="col-header">笔记</div>
+          <div class="col-header">
+            <span class="col-header-label">
+              <el-icon :size="14"><Document /></el-icon>
+              笔记
+            </span>
+          </div>
           <router-view />
         </div>
         </div>
@@ -222,7 +245,12 @@ watch(() => route.query.nb, (nb) => {
         <div class="nav-compact">
           <div class="nav-compact-body">
           <div class="col col-cat">
-            <div class="col-header">目录</div>
+            <div class="col-header">
+              <span class="col-header-label">
+                <el-icon :size="14"><FolderOpened /></el-icon>
+                目录
+              </span>
+            </div>
             <div v-if="categoryStore.tree.length === 0" class="col-empty">
               <el-empty description="暂无目录" :image-size="40" />
             </div>
@@ -245,7 +273,12 @@ watch(() => route.query.nb, (nb) => {
             </div>
           </div>
           <div class="col col-notes">
-            <div class="col-header">笔记</div>
+            <div class="col-header">
+              <span class="col-header-label">
+                <el-icon :size="14"><Document /></el-icon>
+                笔记
+              </span>
+            </div>
             <div class="col-body">
               <div
                 v-for="n in noteStore.notes" :key="n.id"
@@ -254,6 +287,14 @@ watch(() => route.query.nb, (nb) => {
                 @click="router.push(`/note/${n.id}?nb=${editorNotebookId}`)"
               >
                 <span class="note-title">{{ n.title }}</span>
+                <el-button
+                  text
+                  :icon="Delete"
+                  type="danger"
+                  size="small"
+                  class="note-del-btn"
+                  @click="e => handleDeleteNote(e, n.id, n.title)"
+                />
               </div>
             </div>
           </div>
@@ -295,9 +336,15 @@ watch(() => route.query.nb, (nb) => {
 .col { display: flex; flex-direction: column; overflow: hidden; background: var(--el-bg-color); }
 .col-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; font-size: 11px; font-weight: 600;
-  color: var(--el-text-color-secondary); text-transform: uppercase;
-  letter-spacing: 0.5px; border-bottom: 1px solid var(--el-border-color-light); flex-shrink: 0;
+  padding: 10px 14px; font-size: 12px; font-weight: 600;
+  color: var(--el-text-color-primary); letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--el-border-color-light); flex-shrink: 0;
+  background: var(--el-fill-color-lighter);
+  user-select: none;
+}
+
+.col-header-label {
+  display: flex; align-items: center; gap: 6px;
 }
 .col-body { flex: 1; overflow-y: auto; padding: 4px 0; }
 .col-empty { flex: 1; display: flex; justify-content: center; align-items: center; padding: 20px; }
@@ -321,10 +368,15 @@ watch(() => route.query.nb, (nb) => {
 .tree-node:hover .node-actions { display: flex; }
 
 /* ── 笔记列表 ── */
-.note-item { display: flex; align-items: center; padding: 8px 12px; cursor: pointer; font-size: 13px; transition: background 0.12s; }
+.note-item {
+  display: flex; align-items: center; padding: 8px 12px; cursor: pointer; font-size: 13px; transition: background 0.12s;
+}
 .note-item:hover { background: var(--el-fill-color-light); }
 .note-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
-.note-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.note-del-btn { flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+.note-item:hover .note-del-btn,
+.note-del-btn:focus { opacity: 1; }
 
 /* ── 编辑模式 ── */
 .nav-compact {

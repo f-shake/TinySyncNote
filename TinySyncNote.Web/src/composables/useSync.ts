@@ -17,6 +17,7 @@ export function useSync() {
   const lastSyncError = ref<string | null>(null)
 
   let connection: signalR.HubConnection | null = null
+  let disposed = false
   let noteUpdateHandler: ((evt: NoteUpdatedEvent) => void) | null = null
   let noteDeleteHandler: ((evt: NoteDeletedEvent) => void) | null = null
   let conflictHandler: ((evt: any) => void) | null = null
@@ -34,6 +35,7 @@ export function useSync() {
   }
 
   async function connect() {
+    if (disposed) return
     const token = getAccessToken()
     if (!token) return
 
@@ -76,15 +78,21 @@ export function useSync() {
 
     try {
       await connection.start()
+      if (disposed) {
+        await connection.stop()
+        return
+      }
       connected.value = true
       lastSyncError.value = null
     } catch (err: any) {
+      if (disposed) return
       lastSyncError.value = err.message || '连接失败'
       connected.value = false
     }
   }
 
   async function disconnect() {
+    disposed = true
     if (connection) {
       await connection.stop()
       connection = null

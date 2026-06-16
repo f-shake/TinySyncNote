@@ -5,9 +5,9 @@ import { useNoteStore } from '../stores/note'
 import { useNotebookStore } from '../stores/notebook'
 import http from '../utils/http'
 import {
-  Plus, Document, Download, Upload
+  Plus, Document, Download, Upload, Delete
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,8 +51,24 @@ function openNote(noteId: string) {
   router.push(`/note/${noteId}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
 }
 
-function exportNotebook() {
-  window.open(`${import.meta.env.VITE_API_BASE_URL || ''}/api/export/notebook/${notebookId.value}`, '_blank')
+async function exportNotebook() {
+  try {
+    const res = await http.get(`/api/export/notebook/${notebookId.value}`, {
+      responseType: 'blob'
+    })
+    const blob = new Blob([res.data], { type: 'application/zip' })
+    const filename = `notebook-${notebookId.value}.zip`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('导出失败')
+  }
 }
 
 function onImportFileChange(file: File) {
@@ -80,6 +96,18 @@ async function handleImport() {
     importing.value = false
     importFile.value = null
   }
+}
+
+async function handleDeleteNote(noteId: string, noteTitle: string) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${noteTitle}」？删除后不可恢复。`,
+      '删除笔记',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    await noteStore.remove(noteId)
+    ElMessage.success('笔记已删除')
+  } catch { /* cancelled */ }
 }
 </script>
 
@@ -124,6 +152,22 @@ async function handleImport() {
             <div class="note-title">{{ note.title }}</div>
             <div class="note-time">{{ new Date(note.updatedAt).toLocaleString() }}</div>
           </div>
+          <el-popconfirm
+            title="确定删除这篇笔记？"
+            @confirm.stop="handleDeleteNote(note.id, note.title)"
+            @click.stop
+          >
+            <template #reference>
+              <el-button
+                text
+                :icon="Delete"
+                type="danger"
+                size="small"
+                class="note-delete-btn"
+                @click.stop
+              />
+            </template>
+          </el-popconfirm>
         </div>
       </div>
     </div>
@@ -243,6 +287,20 @@ async function handleImport() {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-top: 2px;
+}
+
+.note-delete-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.note-item:hover .note-delete-btn {
+  opacity: 1;
+}
+
+.note-item .note-delete-btn:focus {
+  opacity: 1;
 }
 
 /* ── 导入对话框 ── */

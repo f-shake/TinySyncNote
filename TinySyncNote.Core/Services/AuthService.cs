@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using TinySyncNote.Core.Data;
@@ -23,25 +24,26 @@ public class AuthService : IAuthService
 {
     private readonly AppDbContext _db;
     private readonly JwtSettings _jwtSettings;
+    private readonly IConfiguration _configuration;
 
-    public AuthService(AppDbContext db, IOptions<JwtSettings> jwtOptions)
+    public AuthService(AppDbContext db, IOptions<JwtSettings> jwtOptions, IConfiguration configuration)
     {
         _db = db;
         _jwtSettings = jwtOptions.Value;
+        _configuration = configuration;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
     {
+        if (_configuration["Registration:Enabled"] != "true")
+            throw new InvalidOperationException("注册功能已关闭");
+
         if (await _db.Users.AnyAsync(u => u.Username == request.Username))
             throw new InvalidOperationException("用户名已存在");
-
-        if (await _db.Users.AnyAsync(u => u.Email == request.Email))
-            throw new InvalidOperationException("邮箱已被注册");
 
         var user = new User
         {
             Username = request.Username,
-            Email = request.Email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password)
         };
 
@@ -86,8 +88,7 @@ public class AuthService : IAuthService
             User = new UserInfo
             {
                 Id = user.Id,
-                Username = user.Username,
-                Email = user.Email
+                Username = user.Username
             }
         };
     }
@@ -102,8 +103,7 @@ public class AuthService : IAuthService
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Email, user.Email)
+            new Claim(ClaimTypes.Name, user.Username)
         };
 
         var token = new JwtSecurityToken(
@@ -125,8 +125,7 @@ public class AuthService : IAuthService
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Email, user.Email)
+            new Claim(ClaimTypes.Name, user.Username)
         };
 
         var token = new JwtSecurityToken(

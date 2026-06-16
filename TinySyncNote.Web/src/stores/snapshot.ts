@@ -20,6 +20,15 @@ export const useSnapshotStore = defineStore('snapshot', () => {
     }
   }
 
+  async function fetchById(noteId: string, snapshotId: string): Promise<NoteSnapshot | null> {
+    try {
+      const res = await http.get<NoteSnapshot>(`/api/notes/${noteId}/snapshots/${snapshotId}`)
+      return res.data
+    } catch {
+      return null
+    }
+  }
+
   async function create(noteId: string) {
     try {
       const res = await http.post<NoteSnapshot>(`/api/notes/${noteId}/snapshots`)
@@ -43,5 +52,16 @@ export const useSnapshotStore = defineStore('snapshot', () => {
     }
   }
 
-  return { snapshots, loading, fetchByNote, create, restore }
+  async function remove(noteId: string, snapshotId: string) {
+    try {
+      await http.delete(`/api/notes/${noteId}/snapshots/${snapshotId}`)
+      snapshots.value = snapshots.value.filter(s => s.id !== snapshotId)
+      ElMessage.success('快照已删除')
+    } catch (err: any) {
+      ElMessage.error(err.response?.data?.message || '删除快照失败')
+      throw err
+    }
+  }
+
+  return { snapshots, loading, fetchByNote, fetchById, create, restore, remove }
 })

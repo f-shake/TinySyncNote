@@ -9,6 +9,7 @@ export const useNoteStore = defineStore('note', () => {
   const currentNote = ref<NoteDetailResponse | null>(null)
   const loading = ref(false)
   const selectedCategoryId = ref<string | null>(null)
+  const deletingNoteId = ref<string | null>(null)
 
   async function fetchByCategory(categoryId: string) {
     loading.value = true
@@ -85,6 +86,7 @@ export const useNoteStore = defineStore('note', () => {
   }
 
   async function remove(id: string) {
+    deletingNoteId.value = id
     try {
       await http.delete(`/api/notes/${id}`)
       notes.value = notes.value.filter(n => n.id !== id)
@@ -93,8 +95,10 @@ export const useNoteStore = defineStore('note', () => {
     } catch (err: any) {
       ElMessage.error(err.response?.data?.message || '删除失败')
       throw err
+    } finally {
+      deletingNoteId.value = null
     }
   }
 
-  return { notes, currentNote, loading, selectedCategoryId, fetchByCategory, fetchById, create, update, remove }
+  return { notes, currentNote, loading, selectedCategoryId, deletingNoteId, fetchByCategory, fetchById, create, update, remove }
 })

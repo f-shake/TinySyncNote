@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using TinySyncNote.Core.Data;
 using TinySyncNote.Core.Models;
 using TinySyncNote.Core.Models.DTOs;
@@ -36,7 +38,8 @@ public class AuthServiceTests : IDisposable
             AccessTokenExpirationMinutes = 60
         });
 
-        _service = new AuthService(_db, jwtSettings);
+        var config = new ConfigurationStub();
+        _service = new AuthService(_db, jwtSettings, config);
     }
 
     public void Dispose()
@@ -51,7 +54,6 @@ public class AuthServiceTests : IDisposable
         var request = new RegisterRequest
         {
             Username = "testuser",
-            Email = "test@example.com",
             Password = "password123"
         };
 
@@ -61,7 +63,6 @@ public class AuthServiceTests : IDisposable
         Assert.NotEmpty(result.AccessToken);
         Assert.NotEmpty(result.RefreshToken);
         Assert.Equal("testuser", result.User.Username);
-        Assert.Equal("test@example.com", result.User.Email);
     }
 
     [Fact]
@@ -70,7 +71,6 @@ public class AuthServiceTests : IDisposable
         var request = new RegisterRequest
         {
             Username = "testuser",
-            Email = "test@example.com",
             Password = "password123"
         };
 
@@ -79,7 +79,6 @@ public class AuthServiceTests : IDisposable
         var duplicate = new RegisterRequest
         {
             Username = "testuser",
-            Email = "other@example.com",
             Password = "password123"
         };
 
@@ -89,36 +88,11 @@ public class AuthServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Register_DuplicateEmail_ThrowsInvalidOperation()
-    {
-        var request = new RegisterRequest
-        {
-            Username = "user1",
-            Email = "same@example.com",
-            Password = "password123"
-        };
-
-        await _service.RegisterAsync(request);
-
-        var duplicate = new RegisterRequest
-        {
-            Username = "user2",
-            Email = "same@example.com",
-            Password = "password123"
-        };
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.RegisterAsync(duplicate));
-        Assert.Contains("邮箱已被注册", ex.Message);
-    }
-
-    [Fact]
     public async Task Login_WithCorrectCredentials_ReturnsAuthResponse()
     {
         var register = new RegisterRequest
         {
             Username = "testuser",
-            Email = "test@example.com",
             Password = "password123"
         };
         await _service.RegisterAsync(register);
@@ -142,7 +116,6 @@ public class AuthServiceTests : IDisposable
         var register = new RegisterRequest
         {
             Username = "testuser",
-            Email = "test@example.com",
             Password = "password123"
         };
         await _service.RegisterAsync(register);
@@ -213,7 +186,7 @@ public class NoteServiceTests : IDisposable
 
     private void SeedData()
     {
-        _user = new User { Username = "test", Email = "test@test.com" };
+        _user = new User { Username = "test" };
         _db.Users.Add(_user);
         _db.SaveChanges();
 
@@ -313,5 +286,62 @@ public class NoteServiceTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<KeyNotFoundException>(
             () => _noteService.GetByIdAsync(note.Id, _user.Id));
+    }
+}
+
+/// <summary>
+/// 用于测试的 IConfiguration 最小存根
+/// </summary>
+public class ConfigurationStub : IConfiguration
+{
+    private readonly Dictionary<string, string?> _data = new()
+    {
+        ["Registration:Enabled"] = "true"
+    };
+
+    public string? this[string key]
+    {
+        get => _data.TryGetValue(key, out var v) ? v : null;
+        set => _data[key] = value;
+    }
+
+    public IEnumerable<IConfigurationSection> GetChildren() => Enumerable.Empty<IConfigurationSection>();
+    public IChangeToken GetReloadToken() => new DummyChangeToken();
+    public IConfigurationSection GetSection(string key) => new ConfigurationSection(this, key);
+
+    private class DummyChangeToken : IChangeToken
+    {
+        public bool ActiveChangeCallbacks => false;
+        public bool HasChanged => false;
+        public IDisposable RegisterChangeCallback(Action<object?> callback, object? state) => new NoopDisposable();
+    }
+
+    private class NoopDisposable : IDisposable
+    {
+        public void Dispose() { }
+    }
+
+    private class ConfigurationSection : IConfigurationSection
+    {
+        private readonly ConfigurationStub _root;
+        private readonly string _key;
+
+        public ConfigurationSection(ConfigurationStub root, string key) { _root = root; _key = key; }
+
+        public string? this[string key]
+        {
+            get => _root[_key + ":" + key];
+            set => _root[_key + ":" + key] = value;
+        }
+        public string Key => _key;
+        public string Path => _key;
+        public string? Value
+        {
+            get => _root[_key];
+            set => _root[_key] = value;
+        }
+        public IEnumerable<IConfigurationSection> GetChildren() => Enumerable.Empty<IConfigurationSection>();
+        public IChangeToken GetReloadToken() => new DummyChangeToken();
+        public IConfigurationSection GetSection(string key) => new ConfigurationSection(_root, _key + ":" + key);
     }
 }

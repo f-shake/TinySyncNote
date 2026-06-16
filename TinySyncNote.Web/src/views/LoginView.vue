@@ -1,10 +1,25 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
+import http from '../utils/http'
 
 const authStore = useAuthStore()
+
+const registrationEnabled = ref(false)
+const registrationLoaded = ref(false)
+
+onMounted(async () => {
+  try {
+    const res = await http.get('/api/auth/registration-status')
+    registrationEnabled.value = res.data.enabled
+  } catch {
+    registrationEnabled.value = true
+  } finally {
+    registrationLoaded.value = true
+  }
+})
 
 const form = reactive({
   username: '',
@@ -68,9 +83,11 @@ async function handleLogin() {
         </el-form-item>
       </el-form>
 
-      <div class="login-footer">
-        还没有账号？
-        <router-link to="/register">立即注册</router-link>
+      <div class="login-footer" v-if="registrationLoaded">
+        <template v-if="registrationEnabled">
+          还没有账号？
+          <router-link to="/register">立即注册</router-link>
+        </template>
       </div>
     </div>
   </div>
@@ -154,5 +171,37 @@ html.dark .login-footer {
 
 html.dark .login-footer a {
   color: #5ea6f0;
+}
+
+/* ── 移动端：取消卡片样式 ── */
+@media (max-width: 768px) {
+  .login-container {
+    align-items: flex-start;
+    padding-top: 60px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+
+  .login-card {
+    width: 100%;
+    padding: 24px 20px;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  html.dark .login-card {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .app-title { color: #fff; }
+  .app-subtitle { color: rgba(255,255,255,0.8); }
+  .login-footer { color: rgba(255,255,255,0.7); }
+  .login-footer a { color: #8ab4ff; }
+
+  html.dark .app-title { color: #fff; }
+  html.dark .app-subtitle { color: rgba(255,255,255,0.8); }
+  html.dark .login-footer { color: rgba(255,255,255,0.7); }
+  html.dark .login-footer a { color: #8ab4ff; }
 }
 </style>

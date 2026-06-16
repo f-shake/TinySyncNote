@@ -2,7 +2,6 @@
 export interface UserInfo {
   id: string
   username: string
-  email: string
 }
 
 // 认证响应
@@ -22,7 +21,6 @@ export interface LoginRequest {
 // 注册请求
 export interface RegisterRequest {
   username: string
-  email: string
   password: string
 }
 
@@ -79,6 +77,7 @@ export interface NoteSnapshot {
   version: number
   snapshotType: 'Manual' | 'Automatic'
   snapshotAt: string
+  contentLength?: number
 }
 
 // 冲突详情

@@ -65,6 +65,25 @@ public class SnapshotController : ControllerBase
         }
     }
 
+    /// <summary>删除快照</summary>
+    [HttpDelete("{snapshotId}")]
+    public async Task<ActionResult> Delete(Guid noteId, Guid snapshotId)
+    {
+        try
+        {
+            await _service.DeleteAsync(noteId, snapshotId, UserId);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
     /// <summary>从快照恢复</summary>
     [HttpPost("{snapshotId}/restore")]
     public async Task<ActionResult<SnapshotResponse>> Restore(Guid noteId, Guid snapshotId)

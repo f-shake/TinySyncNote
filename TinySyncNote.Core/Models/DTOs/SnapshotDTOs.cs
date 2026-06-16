@@ -18,4 +18,5 @@ public class SnapshotListItem
     public int Version { get; set; }
     public string SnapshotType { get; set; } = "Automatic";
     public DateTime SnapshotAt { get; set; }
+    public int ContentLength { get; set; }
 }
