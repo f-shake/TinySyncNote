@@ -134,3 +134,27 @@ export interface ConflictListItem {
   noteTitle: string
   createdAt: string
 }
+
+// AI 设置
+export interface AISettings {
+  ai_url: string
+  ai_key: string
+  ai_model: string
+}
+
+// AI 对话消息
+export interface AIChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  tool_call_id?: string
+  tool_calls?: AIToolCall[]
+}
+
+export interface AIToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string
+  }
+}

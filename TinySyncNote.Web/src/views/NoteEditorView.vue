@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
+import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useNoteStore } from '../stores/note'
 import { useSnapshotStore } from '../stores/snapshot'
 import type { NoteSnapshot } from '../types'
 import { ElMessage, ElNotification } from 'element-plus'
-import { ArrowLeft, Delete, Clock, Share } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Clock, Share, Promotion } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
 import ShareDialog from '../components/ShareDialog.vue'
+import AIChatPanel from '../components/AIChatPanel.vue'
+import http from '../utils/http'
+import type { AISettings } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +28,8 @@ const loaded = ref(false)
 const remoteUpdateBanner = ref(false)
 const showSnapshotDrawer = ref(false)
 const showShareDialog = ref(false)
+const showAIChat = ref(false)
+const aiSettings = ref<AISettings | null>(null)
 const previewSnapshot = ref<NoteSnapshot | null>(null)
 const dirty = ref(false)   // 是否有未保存修改
 
@@ -134,6 +139,7 @@ onMounted(async () => {
   noteId.value = route.params.id as string
 
   await loadNote()
+  loadAISettings()
 })
 
 onBeforeUnmount(() => {
@@ -371,6 +377,48 @@ function openShareDialog() {
   showShareDialog.value = true
 }
 
+// ── AI ──
+async function loadAISettings() {
+  try {
+    const res = await http.get<Record<string, string>>('/api/settings')
+    const data = res.data
+    aiSettings.value = {
+      ai_url: data.ai_url || '',
+      ai_key: data.ai_key || '',
+      ai_model: data.ai_model || ''
+    }
+  } catch { /* ignore */ }
+}
+
+function openAIChat() {
+  if (!aiSettings.value?.ai_key) {
+    ElMessage.warning('请先在设置中配置 AI')
+    return
+  }
+  showAIChat.value = true
+}
+
+const editorActions = computed(() => ({
+  getNoteContent: () => vditor?.getValue() || '',
+  replaceNoteContent: (content: string) => {
+    vditor?.setValue(content)
+    dirty.value = true
+    startSaveTimer()
+  },
+  insertAtCursor: (text: string) => {
+    vditor?.insertValue(text)
+    dirty.value = true
+    startSaveTimer()
+  },
+  getSelectedText: () => vditor?.getSelection() || '',
+  setTitle: (t: string) => { title.value = t; dirty.value = true; startSaveTimer() }
+}))
+
+function startSaveTimer() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(autoSave, getAutoSaveInterval())
+}
+
 // 触发防抖保存（标题变化）
 function onTitleChange() {
   dirty.value = true
@@ -420,6 +468,7 @@ function onTitleChange() {
 
         <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
         <el-button text :icon="Share" @click="openShareDialog">分享</el-button>
+        <el-button text :icon="Promotion" @click="openAIChat">AI</el-button>
       </div>
     </div>
 
@@ -441,6 +490,14 @@ function onTitleChange() {
     <div class="editor-container">
       <div ref="editorRef" class="vditor-wrap" />
     </div>
+
+    <!-- ═══ AI 助手 ═══ -->
+    <AIChatPanel
+      :visible="showAIChat"
+      :editor="editorActions"
+      :settings="aiSettings"
+      @close="showAIChat = false"
+    />
   </div>
 
   <!-- ═══ 分享对话框 ═══ -->
@@ -532,6 +589,8 @@ function onTitleChange() {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--el-bg-color);
+  overflow: hidden;
 }
 
 .editor-toolbar {

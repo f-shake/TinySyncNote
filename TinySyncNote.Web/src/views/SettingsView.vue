@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Moon, Sunny } from '@element-plus/icons-vue'
+import { ref, onMounted } from 'vue'
+import { Moon, Sunny, Key, Link as LinkIcon, Cpu } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import http from '../utils/http'
+import type { AISettings } from '../types'
+
 const AUTO_SAVE_KEY = 'tsn_autosave_interval'
 
 const isDark = ref(document.documentElement.classList.contains('dark'))
@@ -30,6 +34,26 @@ function loadAutoSaveInterval(): number {
 
 function onAutoSaveChange(val: number) {
   localStorage.setItem(AUTO_SAVE_KEY, String(val))
+}
+
+// ── AI 设置 ──
+const aiUrl = ref('')
+const aiKey = ref('')
+const aiModel = ref('')
+
+onMounted(async () => {
+  try {
+    const res = await http.get<Record<string, string>>('/api/settings')
+    const d = res.data
+    aiUrl.value = d.ai_url || ''
+    aiKey.value = d.ai_key || ''
+    aiModel.value = d.ai_model || ''
+  } catch { /* ignore */ }
+})
+
+function saveAISettings() {
+  http.put('/api/settings', { ai_url: aiUrl.value, ai_key: aiKey.value, ai_model: aiModel.value })
+  ElMessage.success('AI 设置已保存')
 }
 </script>
 
@@ -66,6 +90,25 @@ function onAutoSaveChange(val: number) {
         />
       </div>
       <div class="setting-desc">输入时自动保存，点击"未保存"标签可立即保存</div>
+    </div>
+
+    <div class="settings-section" style="margin-top: 16px;">
+      <h3 class="section-title">AI</h3>
+      <div class="setting-item">
+        <span class="setting-label">API 地址</span>
+        <el-input v-model="aiUrl" placeholder="https://api.openai.com/v1" size="small" style="width: 240px" />
+      </div>
+      <div class="setting-item">
+        <span class="setting-label">API Key</span>
+        <el-input v-model="aiKey" type="password" placeholder="sk-..." size="small" style="width: 240px" show-password />
+      </div>
+      <div class="setting-item">
+        <span class="setting-label">模型</span>
+        <el-input v-model="aiModel" placeholder="gpt-4o-mini" size="small" style="width: 240px" />
+      </div>
+      <div style="margin-top: 12px; text-align: right;">
+        <el-button type="primary" size="small" @click="saveAISettings">保存 AI 设置</el-button>
+      </div>
     </div>
   </div>
 </template>

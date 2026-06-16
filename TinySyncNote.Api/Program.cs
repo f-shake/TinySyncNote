@@ -99,6 +99,7 @@ builder.Services.AddScoped<IImportExportService, ImportExportService>();
 builder.Services.AddScoped<IShareService, ShareService>();
 builder.Services.AddScoped<IPublicShareService, PublicShareService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IUserSettingService, UserSettingService>();
 
 // ────────────── CORS（开发环境允许 Vite 跨域） ──────────────
 if (builder.Environment.IsDevelopment())
@@ -170,6 +171,21 @@ using (var scope = app.Services.CreateScope())
     db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_NoteShares_NoteId_SharedWithUserId ON NoteShares(NoteId, SharedWithUserId)");
     db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_PublicShares_Token ON PublicShares(Token)");
     db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Notebooks_UserId_IsSystem ON Notebooks(UserId, IsSystem)");
+    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS UserSettings (Id TEXT NOT NULL PRIMARY KEY, UserId TEXT NOT NULL, Key TEXT NOT NULL, Value TEXT NOT NULL)");
+    db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_UserSettings_UserId_Key ON UserSettings(UserId, Key)");
+
+#if DEBUG
+    // 开发模式：默认用户 dev / dev
+    if (!db.Users.Any(u => u.Username == "dev"))
+    {
+        db.Users.Add(new TinySyncNote.Core.Models.Entities.User
+        {
+            Username = "dev",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("dev")
+        });
+        db.SaveChanges();
+    }
+#endif
 }
 
 app.Run();

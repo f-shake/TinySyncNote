@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<SyncTracking> SyncTrackings => Set<SyncTracking>();
     public DbSet<NoteShare> NoteShares => Set<NoteShare>();
     public DbSet<PublicShare> PublicShares => Set<PublicShare>();
+    public DbSet<UserSetting> UserSettings => Set<UserSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -119,6 +120,18 @@ public class AppDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.NoteId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // UserSetting
+        modelBuilder.Entity<UserSetting>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Key).HasMaxLength(50).IsRequired();
+            entity.HasOne(e => e.User)
+                  .WithMany()
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.UserId, e.Key }).IsUnique();
         });
     }
 }
