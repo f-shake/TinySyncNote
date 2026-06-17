@@ -17,6 +17,10 @@ const exporting = ref(false)
 const sharing = ref(false)
 const creatingLink = ref(false)
 const htmlTheme = ref('light')
+
+// 导出图片处理方式
+const mdAssets = ref<'none' | 'embed' | 'external'>('none')
+const htmlAssets = ref<'embed' | 'external'>('embed')
 const windowWidth = ref(window.innerWidth)
 function onResize() { windowWidth.value = window.innerWidth }
 const dialogWidth = computed(() => windowWidth.value <= 720 ? '92vw' : '540px')
@@ -33,7 +37,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 async function handleExportMarkdown() {
   exporting.value = true
   try {
-    const { data, filename } = await shareStore.exportAsMarkdown(props.noteId)
+    const { data, filename } = await shareStore.exportAsMarkdown(props.noteId, mdAssets.value)
     downloadBlob(data, filename)
     ElMessage.success('导出成功')
   } catch { ElMessage.error('导出失败') }
@@ -44,7 +48,7 @@ async function handleExportMarkdown() {
 async function handleExportHtml() {
   exporting.value = true
   try {
-    const { data, filename } = await shareStore.exportAsHtml(props.noteId, htmlTheme.value)
+    const { data, filename } = await shareStore.exportAsHtml(props.noteId, htmlTheme.value, htmlAssets.value)
     downloadBlob(data, filename)
     ElMessage.success('导出成功')
   } catch { ElMessage.error('导出失败') }
@@ -136,9 +140,17 @@ function downloadBlob(blob: Blob, filename: string) {
       <!-- Tab 1: 导出 Markdown -->
       <el-tab-pane label="导出 Markdown" name="markdown">
         <div class="share-tab-body">
-          <p class="share-tab-desc">导出为纯 Markdown 文件，不含 YAML 头部信息</p>
+          <p class="share-tab-desc">导出 Markdown 文件，可选择图片处理方式</p>
+          <div class="assets-options">
+            <el-radio-group v-model="mdAssets">
+              <el-radio value="none">不包含图片</el-radio>
+              <el-radio value="embed">Base64内嵌</el-radio>
+              <el-radio value="external">作为附件</el-radio>
+            </el-radio-group>
+          </div>
+          <p class="share-tab-hint">{{ mdAssets === 'embed' ? '图片以 base64 编码嵌入 Markdown，文件较大但单文件即可使用。' : mdAssets === 'external' ? '导出为 ZIP，图片放在笔记同级的 .assets/ 文件夹中。' : '仅导出文本，不含图片。' }}</p>
           <el-button type="primary" :icon="Download" :loading="exporting" @click="handleExportMarkdown">
-            下载 .md 文件
+            {{ mdAssets === 'external' ? '下载 .zip 文件' : '下载 .md 文件' }}
           </el-button>
         </div>
       </el-tab-pane>
@@ -146,7 +158,7 @@ function downloadBlob(blob: Blob, filename: string) {
       <!-- Tab 2: 导出 HTML -->
       <el-tab-pane label="导出 HTML" name="html">
         <div class="share-tab-body">
-          <p class="share-tab-desc">导出为渲染后的完整 HTML 文件，可在浏览器中直接查看</p>
+          <p class="share-tab-desc">导出为渲染后的完整 HTML 文件</p>
           <div class="html-theme-row">
             <span class="share-label">主题：</span>
             <el-radio-group v-model="htmlTheme" size="small">
@@ -154,8 +166,15 @@ function downloadBlob(blob: Blob, filename: string) {
               <el-radio-button value="dark">深色</el-radio-button>
             </el-radio-group>
           </div>
+          <div class="assets-options">
+            <el-radio-group v-model="htmlAssets">
+              <el-radio value="embed">Base64内嵌</el-radio>
+              <el-radio value="external">作为附件</el-radio>
+            </el-radio-group>
+          </div>
+          <p class="share-tab-hint">{{ htmlAssets === 'embed' ? '图片以 base64 编码嵌入 HTML，单文件即可使用。' : '导出为 ZIP，图片放在笔记同级的 .assets/ 文件夹中。' }}</p>
           <el-button type="primary" :icon="Download" :loading="exporting" @click="handleExportHtml">
-            下载 .html 文件
+            {{ htmlAssets === 'external' ? '下载 .zip 文件' : '下载 .html 文件' }}
           </el-button>
         </div>
       </el-tab-pane>
@@ -257,6 +276,16 @@ function downloadBlob(blob: Blob, filename: string) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.assets-options {
+  padding-left: 4px;
+}
+.share-tab-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
 }
 
 .user-search-input {

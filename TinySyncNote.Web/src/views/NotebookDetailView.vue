@@ -114,7 +114,7 @@ async function handleImport() {
   }
 }
 
-async function handleDeleteNote(noteId: string, noteTitle: string) {
+async function handleDeleteNote(noteId: string, _noteTitle: string) {
   try {
     await noteStore.remove(noteId)
   } catch { /* cancelled */ }
@@ -190,7 +190,7 @@ async function handleDeleteNote(noteId: string, noteTitle: string) {
       @closed="importFile = null"
     >
       <div class="import-body">
-        <p class="import-tip">支持 .md 文件和 .zip 压缩包（ZIP 会还原目录结构）</p>
+        <p class="import-tip">支持 .md 文件和 .zip 压缩包（ZIP 会还原目录结构，<strong>自动导入 assets/ 目录中的图片附件</strong>）</p>
         <el-upload
           drag
           :auto-upload="false"

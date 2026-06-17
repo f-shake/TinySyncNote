@@ -11,20 +11,23 @@ export const useShareStore = defineStore('share', () => {
   const loading = ref(false)
 
   // ── 导出 Markdown ──
-  async function exportAsMarkdown(noteId: string): Promise<{ data: Blob; filename: string }> {
+  async function exportAsMarkdown(noteId: string, assets = 'none'): Promise<{ data: Blob; filename: string }> {
     const res = await http.get(`/api/export/note/${noteId}/markdown`, {
+      params: { assets },
       responseType: 'blob'
     })
-    return { data: res.data, filename: getFilename(res) || `note-${noteId}.md` }
+    const ext = assets === 'external' ? 'zip' : 'md'
+    return { data: res.data, filename: getFilename(res) || `note-${noteId}.${ext}` }
   }
 
-  // ── 导出 HTML（支持亮/暗主题） ──
-  async function exportAsHtml(noteId: string, theme = 'light'): Promise<{ data: Blob; filename: string }> {
+  // ── 导出 HTML（支持亮/暗主题 + 图片处理） ──
+  async function exportAsHtml(noteId: string, theme = 'light', assets = 'embed'): Promise<{ data: Blob; filename: string }> {
     const res = await http.get(`/api/export/note/${noteId}/html`, {
-      params: { theme },
+      params: { theme, assets },
       responseType: 'blob'
     })
-    return { data: res.data, filename: getFilename(res) || `note-${noteId}.html` }
+    const ext = assets === 'external' ? 'zip' : 'html'
+    return { data: res.data, filename: getFilename(res) || `note-${noteId}.${ext}` }
   }
 
   function getFilename(res: any): string | null {

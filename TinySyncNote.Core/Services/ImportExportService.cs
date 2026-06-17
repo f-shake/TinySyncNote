@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using Markdig;
 using Microsoft.EntityFrameworkCore;
 using TinySyncNote.Core.Data;
@@ -11,7 +12,10 @@ namespace TinySyncNote.Core.Services;
 public interface IImportExportService
 {
     Task<ExportNoteResult> ExportNoteAsync(Guid noteId, Guid userId);
+    Task<ExportNoteResult> ExportNoteWithEmbeddedAssetsAsync(Guid noteId, Guid userId);
+    Task<byte[]> ExportNoteAsZipAsync(Guid noteId, Guid userId);
     Task<ExportNoteHtmlResult> ExportNoteAsHtmlAsync(Guid noteId, Guid userId, string theme = "light");
+    Task<byte[]> ExportNoteHtmlAsZipAsync(Guid noteId, Guid userId, string theme = "light");
     Task<byte[]> ExportNotebookAsync(Guid notebookId, Guid userId);
     Task<ImportResult> ImportMarkdownAsync(Guid categoryId, Guid userId, string fileName, Stream content);
     Task<ImportResult> ImportZipAsync(Guid notebookId, Guid userId, Stream zipStream);
@@ -20,6 +24,16 @@ public interface IImportExportService
 public class ImportExportService : IImportExportService
 {
     private readonly AppDbContext _db;
+
+    /// <summary>匹配笔记内容中的 /api/attachment/{guid} 引用</summary>
+    private static readonly Regex AttachmentUrlRx = new(
+        @"/api/attachment/([0-9a-f\-]{36})",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>匹配导出文件中的 {名称}.assets/{filename} 引用</summary>
+    private static readonly Regex LocalAssetRx = new(
+        @"([^""'\s\)\(]+\.assets/[^""'\s\)]+)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ImportExportService(AppDbContext db) => _db = db;
 
@@ -43,7 +57,103 @@ public class ImportExportService : IImportExportService
         };
     }
 
-    // ── 单篇笔记 → 渲染 HTML ──
+    // ── 单篇笔记 → Markdown（图片内嵌 base64） ──
+    public async Task<ExportNoteResult> ExportNoteWithEmbeddedAssetsAsync(Guid noteId, Guid userId)
+    {
+        var note = await _db.Notes
+            .Include(n => n.Category)
+            .FirstOrDefaultAsync(n => n.Id == noteId)
+            ?? throw new KeyNotFoundException("笔记不存在");
+
+        await VerifyNotebookAccess(note.Category.NotebookId, userId);
+
+        // 扫描附件引用，替换为 data: URI
+        var guids = new HashSet<Guid>();
+        foreach (Match m in AttachmentUrlRx.Matches(note.Content))
+        {
+            if (Guid.TryParse(m.Groups[1].Value, out var g))
+                guids.Add(g);
+        }
+
+        var attachments = await _db.NoteAttachments
+            .Where(a => guids.Contains(a.Id))
+            .ToListAsync();
+        var attachmentMap = attachments.ToDictionary(a => a.Id);
+
+        var content = AttachmentUrlRx.Replace(note.Content, m =>
+        {
+            if (!Guid.TryParse(m.Groups[1].Value, out var guid)) return m.Value;
+            if (!attachmentMap.TryGetValue(guid, out var att)) return m.Value;
+            var b64 = Convert.ToBase64String(att.Data);
+            return $"data:{att.ContentType};base64,{b64}";
+        });
+
+        var safeName = SanitizeFileName(note.Title);
+
+        return new ExportNoteResult
+        {
+            FileName = $"{safeName}.md",
+            Content = content,
+            ContentType = "text/markdown"
+        };
+    }
+
+    // ── 单篇笔记 → ZIP（含附件） ──
+    public async Task<byte[]> ExportNoteAsZipAsync(Guid noteId, Guid userId)
+    {
+        var note = await _db.Notes
+            .Include(n => n.Category)
+            .FirstOrDefaultAsync(n => n.Id == noteId)
+            ?? throw new KeyNotFoundException("笔记不存在");
+
+        await VerifyNotebookAccess(note.Category.NotebookId, userId);
+
+        // 扫描附件引用
+        var guids = new HashSet<Guid>();
+        foreach (Match m in AttachmentUrlRx.Matches(note.Content))
+        {
+            if (Guid.TryParse(m.Groups[1].Value, out var g))
+                guids.Add(g);
+        }
+
+        var attachments = await _db.NoteAttachments
+            .Where(a => guids.Contains(a.Id))
+            .ToListAsync();
+        var attachmentMap = attachments.ToDictionary(a => a.Id);
+
+        var safeName = SanitizeFileName(note.Title);
+        using var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        {
+            var assetDir = $"{safeName}.assets";
+
+            // 替换附件 URL 为 {safeName}.assets/ 本地路径
+            var content = ReplaceAttachmentUrls(note.Content, attachmentMap, assetDir, out var usedGuids);
+
+            // 写入 .md
+            var entry = archive.CreateEntry($"{safeName}.md");
+            using (var writer = new StreamWriter(entry.Open(), Encoding.UTF8))
+            {
+                await writer.WriteAsync(content);
+            }
+
+            // 写入附件
+            foreach (var guid in usedGuids)
+            {
+                if (!attachmentMap.TryGetValue(guid, out var att)) continue;
+                var ext = Path.GetExtension(att.FileName);
+                if (string.IsNullOrEmpty(ext)) ext = ".bin";
+
+                var assetEntry = archive.CreateEntry($"{assetDir}/{guid}{ext}");
+                using var assetStream = assetEntry.Open();
+                assetStream.Write(att.Data);
+            }
+        }
+
+        return ms.ToArray();
+    }
+
+    // ── 单篇笔记 → 渲染 HTML（图片内嵌 base64） ──
     public async Task<ExportNoteHtmlResult> ExportNoteAsHtmlAsync(Guid noteId, Guid userId, string theme = "light")
     {
         var note = await _db.Notes
@@ -53,9 +163,31 @@ public class ImportExportService : IImportExportService
 
         await VerifyNotebookAccess(note.Category.NotebookId, userId);
 
+        // 扫描附件引用，将图片内嵌为 base64
+        var guids = new HashSet<Guid>();
+        foreach (Match m in AttachmentUrlRx.Matches(note.Content))
+        {
+            if (Guid.TryParse(m.Groups[1].Value, out var g))
+                guids.Add(g);
+        }
+
+        var attachments = await _db.NoteAttachments
+            .Where(a => guids.Contains(a.Id))
+            .ToListAsync();
+        var attachmentMap = attachments.ToDictionary(a => a.Id);
+
+        // 替换附件 URL 为 data: URI
+        var htmlContent = AttachmentUrlRx.Replace(note.Content, m =>
+        {
+            if (!Guid.TryParse(m.Groups[1].Value, out var guid)) return m.Value;
+            if (!attachmentMap.TryGetValue(guid, out var att)) return m.Value;
+            var b64 = Convert.ToBase64String(att.Data);
+            return $"data:{att.ContentType};base64,{b64}";
+        });
+
         var safeName = SanitizeFileName(note.Title);
         var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-        var bodyHtml = Markdig.Markdown.ToHtml(note.Content, pipeline);
+        var bodyHtml = Markdig.Markdown.ToHtml(htmlContent, pipeline);
 
         var isDark = theme == "dark";
         var bg = isDark ? "#1a1a1a" : "#fff";
@@ -89,7 +221,91 @@ public class ImportExportService : IImportExportService
         };
     }
 
-    // ── 整个笔记本 → ZIP（无 YAML 头部） ──
+    // ── 单篇笔记 → HTML + assets/ ZIP ──
+    public async Task<byte[]> ExportNoteHtmlAsZipAsync(Guid noteId, Guid userId, string theme = "light")
+    {
+        var note = await _db.Notes
+            .Include(n => n.Category)
+            .FirstOrDefaultAsync(n => n.Id == noteId)
+            ?? throw new KeyNotFoundException("笔记不存在");
+
+        await VerifyNotebookAccess(note.Category.NotebookId, userId);
+
+        // 扫描附件引用
+        var guids = new HashSet<Guid>();
+        foreach (Match m in AttachmentUrlRx.Matches(note.Content))
+        {
+            if (Guid.TryParse(m.Groups[1].Value, out var g))
+                guids.Add(g);
+        }
+
+        var attachments = await _db.NoteAttachments
+            .Where(a => guids.Contains(a.Id))
+            .ToListAsync();
+        var attachmentMap = attachments.ToDictionary(a => a.Id);
+
+        var safeName = SanitizeFileName(note.Title);
+
+        // 替换附件 URL 为 {safeName}.assets/ 相对路径
+        var mdContent = ReplaceAttachmentUrls(note.Content, attachmentMap, $"{safeName}.assets", out var usedGuids);
+
+        var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        var bodyHtml = Markdig.Markdown.ToHtml(mdContent, pipeline);
+
+        var isDark = theme == "dark";
+        var bg = isDark ? "#1a1a1a" : "#fff";
+        var fg = isDark ? "#e0e0e0" : "#333";
+        var codeBg = isDark ? "#2a2a2a" : "#f4f4f4";
+        var border = isDark ? "#444" : "#ddd";
+        var blockquoteColor = isDark ? "#aaa" : "#666";
+
+        var html = $"<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n" +
+            $"<meta charset=\"UTF-8\">\n<title>{EscapeHtml(note.Title)}</title>\n" +
+            $"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n" +
+            $"<style>\n" +
+            $"body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; " +
+            $"max-width: 800px; margin: 0 auto; padding: 20px; color: {fg}; background: {bg}; line-height: 1.6; }}\n" +
+            $"h1, h2, h3, h4, h5, h6 {{ margin-top: 1.5em; margin-bottom: 0.5em; }}\n" +
+            $"code {{ background: {codeBg}; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }}\n" +
+            $"pre {{ background: {codeBg}; padding: 12px; border-radius: 6px; overflow-x: auto; }}\n" +
+            $"pre code {{ background: none; padding: 0; }}\n" +
+            $"blockquote {{ border-left: 4px solid {border}; margin: 0; padding: 0 16px; color: {blockquoteColor}; }}\n" +
+            $"table {{ border-collapse: collapse; width: 100%; }}\n" +
+            $"th, td {{ border: 1px solid {border}; padding: 8px 12px; text-align: left; }}\n" +
+            $"th {{ background: {codeBg}; }}\n" +
+            $"img {{ max-width: 100%; }}\n" +
+            $"</style>\n</head>\n<body>\n" +
+            $"<article class=\"markdown-body\">{bodyHtml}</article>\n</body>\n</html>";
+
+        using var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        {
+            var assetDir = $"{safeName}.assets";
+
+            // 写入 .html
+            var entry = archive.CreateEntry($"{safeName}.html");
+            using (var writer = new StreamWriter(entry.Open(), Encoding.UTF8))
+            {
+                await writer.WriteAsync(html);
+            }
+
+            // 写入附件
+            foreach (var guid in usedGuids)
+            {
+                if (!attachmentMap.TryGetValue(guid, out var att)) continue;
+                var ext = Path.GetExtension(att.FileName);
+                if (string.IsNullOrEmpty(ext)) ext = ".bin";
+
+                var assetEntry = archive.CreateEntry($"{assetDir}/{guid}{ext}");
+                using var assetStream = assetEntry.Open();
+                assetStream.Write(att.Data);
+            }
+        }
+
+        return ms.ToArray();
+    }
+
+    // ── 整个笔记本 → ZIP（含附件 assets/） ──
     public async Task<byte[]> ExportNotebookAsync(Guid notebookId, Guid userId)
     {
         var notebook = await _db.Notebooks
@@ -105,6 +321,23 @@ public class ImportExportService : IImportExportService
             .Where(n => n.Category.NotebookId == notebookId)
             .Include(n => n.Category)
             .ToListAsync();
+
+        // 收集所有笔记中引用的附件 GUID
+        var allGuids = new HashSet<Guid>();
+        foreach (var note in notes)
+        {
+            foreach (Match m in AttachmentUrlRx.Matches(note.Content))
+            {
+                if (Guid.TryParse(m.Groups[1].Value, out var g))
+                    allGuids.Add(g);
+            }
+        }
+
+        // 从数据库加载所有引用的附件
+        var attachments = await _db.NoteAttachments
+            .Where(a => allGuids.Contains(a.Id))
+            .ToListAsync();
+        var attachmentMap = attachments.ToDictionary(a => a.Id);
 
         // 第一遍：统计目录路径出现次数，同名目录全部编号从 1 开始
         var rawPaths = categories.ToDictionary(c => c.Id, c => BuildRawCategoryPath(c, categories));
@@ -143,6 +376,8 @@ public class ImportExportService : IImportExportService
         using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
         {
             var titleIdx = new Dictionary<string, Dictionary<string, int>>();
+            // 按笔记路径追踪引用的附件：catPath → safeName → [guids]
+            var catNoteAssets = new Dictionary<string, Dictionary<string, HashSet<Guid>>>();
 
             foreach (var note in notes)
             {
@@ -152,7 +387,6 @@ public class ImportExportService : IImportExportService
                 string entryName;
                 if (titleTotal[catPath][safeName] > 1)
                 {
-                    // 有同名笔记 → 全部编号从 1 开始
                     if (!titleIdx.TryGetValue(catPath, out var dirIdx))
                         titleIdx[catPath] = dirIdx = [];
                     dirIdx[safeName] = dirIdx.GetValueOrDefault(safeName) + 1;
@@ -168,9 +402,43 @@ public class ImportExportService : IImportExportService
                         : $"{catPath}/{safeName}.md";
                 }
 
+                var assetDir = $"{safeName}.assets";
+
+                // 替换附件 URL 为 {safeName}.assets/ 相对路径
+                var content = ReplaceAttachmentUrls(note.Content, attachmentMap, assetDir, out var usedGuids);
+
+                // 追踪该笔记下被引用的附件
+                if (!catNoteAssets.TryGetValue(catPath, out var catDict))
+                    catNoteAssets[catPath] = catDict = [];
+                if (!catDict.TryGetValue(safeName, out var noteGuids))
+                    catDict[safeName] = noteGuids = [];
+                noteGuids.UnionWith(usedGuids);
+
                 var entry = archive.CreateEntry(entryName);
                 using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
-                await writer.WriteAsync(note.Content);
+                await writer.WriteAsync(content);
+            }
+
+            // 写入附件 → {catPath}/{safeName}.assets/{guid}.ext
+            foreach (var (catPath, catDict) in catNoteAssets)
+            {
+                foreach (var (safeName, guids) in catDict)
+                {
+                    foreach (var guid in guids)
+                    {
+                        if (!attachmentMap.TryGetValue(guid, out var att)) continue;
+                        var ext = Path.GetExtension(att.FileName);
+                        if (string.IsNullOrEmpty(ext)) ext = ".bin";
+
+                        var assetPath = string.IsNullOrEmpty(catPath)
+                            ? $"{safeName}.assets/{guid}{ext}"
+                            : $"{catPath}/{safeName}.assets/{guid}{ext}";
+
+                        var assetEntry = archive.CreateEntry(assetPath);
+                        using var assetStream = assetEntry.Open();
+                        assetStream.Write(att.Data);
+                    }
+                }
             }
         }
 
@@ -211,7 +479,7 @@ public class ImportExportService : IImportExportService
         return result;
     }
 
-    // ── 导入 ZIP ──
+    // ── 导入 ZIP（含 assets/ 附件支持） ──
     public async Task<ImportResult> ImportZipAsync(Guid notebookId, Guid userId, Stream zipStream)
     {
         var result = new ImportResult();
@@ -223,18 +491,69 @@ public class ImportExportService : IImportExportService
 
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
 
+        // 跨多个笔记共享的附件导入缓存（old asset name → new /api/attachment/{guid}）
+        var importedAssets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var entry in archive.Entries)
         {
             if (string.IsNullOrEmpty(entry.Name)) continue; // 目录条目
+            if (!entry.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue; // 只处理 .md
 
             try
             {
-                // 解析目录路径
+                // 解析目录路径（.md 所在的目录）
                 var dirPath = Path.GetDirectoryName(entry.FullName)?.Replace('\\', '/') ?? "";
                 var category = await GetOrCreateCategory(notebookId, dirPath);
 
                 using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
                 var text = await reader.ReadToEndAsync();
+
+                // 替换本地 {名称}.assets/ 引用为 /api/attachment/{guid}
+                // 资产文件位于 .md 同目录下的 {名称}.assets/ 中
+                text = LocalAssetRx.Replace(text, m =>
+                {
+                    var fullRef = m.Groups[1].Value; // e.g., "Note 1.assets/guid.png"
+
+                    // 已导入的附件直接复用
+                    if (importedAssets.TryGetValue(fullRef, out var existingUrl))
+                        return existingUrl;
+
+                    // 在 ZIP 中查找文件：{dirPath}/{fullRef}
+                    var fullAssetPath = string.IsNullOrEmpty(dirPath)
+                        ? fullRef
+                        : $"{dirPath}/{fullRef}";
+
+                    var assetEntry = archive.Entries
+                        .FirstOrDefault(e =>
+                            string.Equals(e.FullName.Replace('\\', '/'), fullAssetPath, StringComparison.OrdinalIgnoreCase));
+
+                    if (assetEntry == null)
+                        return m.Value; // 找不到则保持原样
+
+                    // 读取附件二进制
+                    byte[] data;
+                    using (var assetStream = assetEntry.Open())
+                    using (var ms = new MemoryStream())
+                    {
+                        assetStream.CopyTo(ms);
+                        data = ms.ToArray();
+                    }
+
+                    var contentType = GetContentType(Path.GetExtension(fullRef));
+
+                    var attachment = new NoteAttachment
+                    {
+                        FileName = fullRef,
+                        ContentType = contentType,
+                        Data = data,
+                        FileSize = data.Length
+                    };
+                    _db.NoteAttachments.Add(attachment);
+
+                    var newUrl = $"/api/attachment/{attachment.Id}";
+                    importedAssets[fullRef] = newUrl;
+                    return newUrl;
+                });
 
                 var (title, body) = ParseMarkdown(text, Path.GetFileNameWithoutExtension(entry.Name));
 
@@ -245,8 +564,8 @@ public class ImportExportService : IImportExportService
                     Content = body,
                     Version = 1
                 };
-
                 _db.Notes.Add(note);
+
                 result.NotesImported++;
             }
             catch (Exception ex)
@@ -260,6 +579,40 @@ public class ImportExportService : IImportExportService
     }
 
     // ── 辅助方法 ──
+
+    /// <summary>替换笔记内容中的 /api/attachment/{guid} 为 {assetDir}/{guid}{ext}</summary>
+    private static string ReplaceAttachmentUrls(
+        string content,
+        Dictionary<Guid, NoteAttachment> attachmentMap,
+        string assetDir,
+        out HashSet<Guid> usedGuids)
+    {
+        var used = new HashSet<Guid>();
+        var result = AttachmentUrlRx.Replace(content, m =>
+        {
+            if (!Guid.TryParse(m.Groups[1].Value, out var guid)) return m.Value;
+            if (!attachmentMap.TryGetValue(guid, out var att)) return m.Value;
+
+            var ext = Path.GetExtension(att.FileName);
+            if (string.IsNullOrEmpty(ext)) ext = ".bin";
+            used.Add(guid);
+            return $"{assetDir}/{guid}{ext}";
+        });
+        usedGuids = used;
+        return result;
+    }
+
+    /// <summary>根据扩展名获取 Content-Type</summary>
+    private static string GetContentType(string ext) => ext switch
+    {
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".webp" => "image/webp",
+        ".bmp" => "image/bmp",
+        ".svg" => "image/svg+xml",
+        _ => "application/octet-stream"
+    };
 
     private static string EscapeHtml(string text)
         => System.Net.WebUtility.HtmlEncode(text);

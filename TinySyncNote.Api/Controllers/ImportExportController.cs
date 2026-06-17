@@ -16,13 +16,29 @@ public class ImportExportController : ControllerBase
 
     private Guid UserId => Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
 
-    /// <summary>导出单篇笔记为 Markdown（无 YAML 头部）</summary>
+    /// <summary>
+    /// 导出单篇笔记为 Markdown（无 YAML 头部）
+    /// assets=none（默认）→ 纯 .md，不处理图片
+    /// assets=embed → .md 中图片内嵌为 base64 Data URI
+    /// assets=external → ZIP（.md + assets/ 目录）
+    /// </summary>
     [HttpGet("note/{noteId}/markdown")]
-    public async Task<ActionResult> ExportNote(Guid noteId)
+    public async Task<ActionResult> ExportNote(Guid noteId, [FromQuery] string assets = "none")
     {
         try
         {
-            var result = await _service.ExportNoteAsync(noteId, UserId);
+            if (assets == "external")
+            {
+                var bytes = await _service.ExportNoteAsZipAsync(noteId, UserId);
+                return File(bytes, "application/zip", $"note-{noteId}.zip");
+            }
+
+            ExportNoteResult result;
+            if (assets == "embed")
+                result = await _service.ExportNoteWithEmbeddedAssetsAsync(noteId, UserId);
+            else
+                result = await _service.ExportNoteAsync(noteId, UserId);
+
             return FileWithChineseName(
                 System.Text.Encoding.UTF8.GetBytes(result.Content),
                 result.ContentType,
@@ -39,18 +55,50 @@ public class ImportExportController : ControllerBase
         }
     }
 
-    /// <summary>导出单篇笔记为渲染后的 HTML</summary>
+    /// <summary>
+    /// 导出单篇笔记为渲染后的 HTML
+    /// assets=embed（默认）→ HTML 中图片内嵌为 base64
+    /// assets=external → ZIP（.html + assets/ 目录）
+    /// </summary>
     [HttpGet("note/{noteId}/html")]
-    public async Task<ActionResult> ExportNoteHtml(Guid noteId, [FromQuery] string theme = "light")
+    public async Task<ActionResult> ExportNoteHtml(
+        Guid noteId,
+        [FromQuery] string theme = "light",
+        [FromQuery] string assets = "embed")
     {
         try
         {
+            if (assets == "external")
+            {
+                var bytes = await _service.ExportNoteHtmlAsZipAsync(noteId, UserId, theme);
+                return File(bytes, "application/zip", $"note-{noteId}.zip");
+            }
+
             var result = await _service.ExportNoteAsHtmlAsync(noteId, UserId, theme);
             return FileWithChineseName(
                 System.Text.Encoding.UTF8.GetBytes(result.Content),
                 result.ContentType,
                 result.FileName
             );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>导出单篇笔记为 ZIP（含 assets/ 附件）— 同 /markdown?assets=external</summary>
+    [HttpGet("note/{noteId}/zip")]
+    public async Task<ActionResult> ExportNoteZip(Guid noteId)
+    {
+        try
+        {
+            var bytes = await _service.ExportNoteAsZipAsync(noteId, UserId);
+            return File(bytes, "application/zip", $"note-{noteId}.zip");
         }
         catch (KeyNotFoundException ex)
         {

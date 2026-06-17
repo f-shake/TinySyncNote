@@ -559,7 +559,8 @@ function onTitleChange() {
     @close="showShareDialog = false"
   />
 
-  <!-- ═══ 快照历史抽屉 ═══ -->
+
+
   <el-drawer
     v-model="showSnapshotDrawer"
     title="历史版本"
