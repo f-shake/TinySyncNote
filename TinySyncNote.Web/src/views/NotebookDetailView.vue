@@ -319,6 +319,10 @@ async function handleDeleteNote(noteId: string, noteTitle: string) {
 @media (max-width: 720px) {
   .notebook-detail-view { padding: 12px; }
   .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
-  .header-actions { justify-content: flex-end; }
+  .header-actions { justify-content: flex-start; flex-wrap: wrap; column-gap: 6px; row-gap: 12px; }
+  .header-actions .el-button { font-size: 12px; padding: 6px 8px; margin: 0; }
+  .header-actions .el-button .el-icon { margin-right: 3px; }
+  .header-actions > :first-child { flex: 0 0 100%; }
+  .header-actions > :not(:first-child) { flex: 1; }
 }
 </style>

@@ -26,7 +26,7 @@ const messages = ref<DisplayMessage[]>([])
 const inputText = ref('')
 const loading = ref(false)
 const msgListRef = ref<HTMLDivElement | null>(null)
-const history: AIChatMessage[] = []
+const history = ref<AIChatMessage[]>([])
 
 function scrollToBottom() {
   nextTick(() => {
@@ -54,10 +54,11 @@ async function send() {
   loading.value = true
 
   try {
-    await runAIChat(text, history, props.settings, props.editor, (chunk) => {
+    const { updatedHistory } = await runAIChat(text, history.value, props.settings, props.editor, (chunk) => {
       assistantMsg.content += chunk
       scrollToBottom()
     })
+    history.value = updatedHistory
   } catch (err: any) {
     assistantMsg.content = `出错了：${err.message}`
   } finally {
@@ -123,7 +124,7 @@ function renderMarkdown(text: string): string {
 }
 
 @media (max-width: 720px) {
-  .ai-panel { animation: slideInUp 0.25s ease-out; }
+  .ai-panel { animation: slideInUp 0.25s ease-out; max-height: 40vh; }
 }
 
 .ai-panel-header {

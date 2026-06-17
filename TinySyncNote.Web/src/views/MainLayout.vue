@@ -112,7 +112,7 @@ function handleMoreCommand(cmd: string) {
 </template>
 
 <style scoped>
-.main-layout { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.main-layout { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
 
 .top-bar {
   display: flex; align-items: center; justify-content: space-between;

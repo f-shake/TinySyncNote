@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useShareStore } from '../stores/share'
 import { ElMessage } from 'element-plus'
 import { Download, Link, User } from '@element-plus/icons-vue'
@@ -17,12 +17,17 @@ const exporting = ref(false)
 const sharing = ref(false)
 const creatingLink = ref(false)
 const htmlTheme = ref('light')
+const windowWidth = ref(window.innerWidth)
+function onResize() { windowWidth.value = window.innerWidth }
+const dialogWidth = computed(() => windowWidth.value <= 720 ? '92vw' : '540px')
 
 // 打开时先保存，确保内容最新
 onMounted(async () => {
   if (props.onSave) await props.onSave()
   shareStore.fetchPublicLinks(props.noteId)
+  window.addEventListener('resize', onResize)
 })
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 // ── Tab 1: 导出 Markdown ──
 async function handleExportMarkdown() {
@@ -122,9 +127,10 @@ function downloadBlob(blob: Blob, filename: string) {
   <el-dialog
     :model-value="true"
     title="分享笔记"
-    width="540px"
+    :width="dialogWidth"
     @close="emit('close')"
     :close-on-click-modal="false"
+    class="share-dialog"
   >
     <el-tabs v-model="activeTab">
       <!-- Tab 1: 导出 Markdown -->
@@ -309,5 +315,13 @@ function downloadBlob(blob: Blob, filename: string) {
   gap: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+@media (max-width: 720px) {
+  .share-dialog :deep(.el-dialog__body) { padding: 10px; overflow-x: hidden; }
+  .share-dialog :deep(.el-tabs__content) { overflow-x: hidden; }
+  .share-dialog :deep(.el-overlay-dialog) { overflow: hidden; }
+  .public-link-url-row { flex-wrap: wrap; }
+  .public-link-url-row .el-button { flex-shrink: 0; }
+  .user-search-input { max-width: 100%; }
 }
 </style>

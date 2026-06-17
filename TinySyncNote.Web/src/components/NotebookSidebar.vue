@@ -158,8 +158,20 @@ function handleDeleteCategory(cat: Category) {
 .expand-icon { flex-shrink: 0; cursor: pointer; color: var(--el-text-color-secondary); }
 .expand-ph { width: 11px; flex-shrink: 0; }
 .node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.nb { font-size: 10px; color: var(--el-text-color-secondary); background: var(--el-fill-color); padding: 0 4px; border-radius: 5px; flex-shrink: 0; margin-left: auto; }
-.node-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.nb { font-size: 10px; color: var(--el-text-color-secondary); background: var(--el-fill-color); padding: 0 4px; border-radius: 5px; flex-shrink: 0; margin: 0 8px; }
+.node-actions { display: flex; gap: 2px; flex-shrink: 0; margin-left: auto; }
 @media (hover: hover) { .node-actions { visibility: hidden; } .tree-node:hover .node-actions { visibility: visible; } }
 @media (hover: none) { .node-actions { opacity: 0.5; } }
+
+@media (max-width: 720px) {
+  .col-cat { flex: 0 0 40%; min-width: 120px; }
+  /* 非选中项隐藏编辑/删除按钮，节省空间给目录名 */
+  .tree-node:not(.selected) .node-actions { display: none; }
+  /* 选中项的按钮更紧凑 */
+  .tree-node.selected .node-actions .el-button { padding: 4px 2px; }
+  .tree-node.selected .node-actions { gap: 0; }
+  /* 计数字段也缩小 */
+  .nb { font-size: 9px; padding: 0 3px; margin: 0 8px; }
+  .tree-node { gap: 4px; padding: 5px 6px; }
+}
 </style>

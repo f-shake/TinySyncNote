@@ -206,7 +206,7 @@ function initEditor(content: string) {
   vditor = new Vditor(editorRef.value, {
     value: content || '',
     height: '100%',
-    minHeight: 400,
+    minHeight: window.innerWidth <= 720 ? 200 : 400,
     mode: savedMode,
     placeholder: '开始书写...',
     cache: { enable: false },
