@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<NoteShare> NoteShares => Set<NoteShare>();
     public DbSet<PublicShare> PublicShares => Set<PublicShare>();
     public DbSet<UserSetting> UserSettings => Set<UserSetting>();
+    public DbSet<NoteAttachment> NoteAttachments => Set<NoteAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -132,6 +133,20 @@ public class AppDbContext : DbContext
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(e => new { e.UserId, e.Key }).IsUnique();
+        });
+
+        // NoteAttachment
+        modelBuilder.Entity<NoteAttachment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Data).IsRequired();
+            entity.HasOne(e => e.Note)
+                  .WithMany()
+                  .HasForeignKey(e => e.NoteId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.NoteId);
         });
     }
 }

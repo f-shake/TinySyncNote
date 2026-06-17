@@ -238,18 +238,13 @@ function initEditor(content: string) {
       'undo', 'redo'
     ],
     upload: {
-      // 图片粘贴 → base64
-      handler: async (files: File[]) => {
-        for (const file of files) {
-          const base64 = await fileToBase64(file)
-          if (vditor) {
-            vditor.insertValue(`![${file.name}](${base64})`)
-          }
-        }
-        return JSON.stringify({ msg: '', code: 0, data: { errFiles: [], succMap: {} } })
-      },
+      url: '/api/upload/image',
+      extraData: { noteId: noteId.value },
       accept: 'image/*',
-      multiple: true
+      multiple: true,
+      max: 4 * 1024 * 1024,
+      fieldName: 'file',
+      linkToImgUrl: ''
     },
     input: () => {
       dirty.value = true
@@ -296,14 +291,6 @@ function initEditor(content: string) {
   })
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
 
 async function autoSave() {
   if (!vditor || !noteStore.currentNote) return

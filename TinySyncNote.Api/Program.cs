@@ -127,12 +127,14 @@ if (app.Environment.IsDevelopment())
 {
     app.UseCors();
 }
-else
+
+// 生产环境先改写 URL 找默认文件（index.html）
+if (!app.Environment.IsDevelopment())
 {
-    // 生产环境：ASP.NET 提供前端静态文件
     app.UseDefaultFiles();
-    app.UseStaticFiles();
 }
+// 始终启用静态文件（上传的图片 + 生产环境的 SPA）
+app.UseStaticFiles();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -167,6 +169,8 @@ using (var scope = app.Services.CreateScope())
     catch { }
     db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteShares (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NOT NULL, OwnerUserId TEXT NOT NULL, SharedWithUserId TEXT NOT NULL, SharedNoteCopyId TEXT NOT NULL, SharedAt TEXT NOT NULL)");
     db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS PublicShares (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NOT NULL, CreatedByUserId TEXT NOT NULL, Token TEXT NOT NULL, CreatedAt TEXT NOT NULL, ExpiresAt TEXT NULL, IsActive INTEGER NOT NULL DEFAULT 1)");
+    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteAttachments (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NULL, FileName TEXT NOT NULL, ContentType TEXT NOT NULL, Data BLOB NOT NULL, FileSize INTEGER NOT NULL, CreatedAt TEXT NOT NULL)");
+    db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_NoteAttachments_NoteId ON NoteAttachments(NoteId)");
     // 索引（SQLite 忽略重复创建）
     db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_NoteShares_NoteId_SharedWithUserId ON NoteShares(NoteId, SharedWithUserId)");
     db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_PublicShares_Token ON PublicShares(Token)");
