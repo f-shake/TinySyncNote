@@ -11,11 +11,17 @@ namespace TinySyncNote.Api.Controllers;
 public class UploadController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly long _maxFileSize;
 
-    public UploadController(AppDbContext db) => _db = db;
+    public UploadController(AppDbContext db, IConfiguration configuration)
+    {
+        _db = db;
+        var mb = configuration.GetValue<int>("Upload:MaxFileSizeMB", 100);
+        _maxFileSize = mb * 1024L * 1024L;
+    }
 
     [HttpPost("image")]
-    [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
+    [DisableRequestSizeLimit]
     public async Task<ActionResult> UploadImage(
         IFormFile file,
         [FromQuery] Guid? noteId = null)
@@ -23,12 +29,14 @@ public class UploadController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest(new { msg = "请选择文件" });
 
+        if (file.Length > _maxFileSize)
+            return BadRequest(new { msg = $"文件大小超过限制（{_maxFileSize / (1024 * 1024)}MB）" });
+
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg" };
         if (!allowed.Contains(ext))
             return BadRequest(new { msg = "不支持的图片格式" });
 
-        var buffer = new byte[file.Length];
         await using var ms = new MemoryStream();
         await file.CopyToAsync(ms);
 

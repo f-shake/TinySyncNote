@@ -242,7 +242,6 @@ function initEditor(content: string) {
       extraData: { noteId: noteId.value },
       accept: 'image/*',
       multiple: true,
-      max: 4 * 1024 * 1024,
       fieldName: 'file',
       linkToImgUrl: ''
     },
