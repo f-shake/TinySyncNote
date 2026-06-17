@@ -78,32 +78,10 @@ let modeCheckTimer: ReturnType<typeof setInterval> | null = null
 let lastSavedVersion = 0
 let pendingSaveVersion = 0  // 正在保存的版本号，用于过滤自己的 SignalR 通知
 
-// ── 离开页面确认 ──
+// ── 离开页面自动静默保存 ──
 onBeforeRouteLeave(async (_to, _from, next) => {
-  if (dirty.value) {
-    try {
-      await ElMessageBox.confirm(
-        '有未保存的修改，是否保存后离开？',
-        '离开确认',
-        {
-          confirmButtonText: '保存并离开',
-          cancelButtonText: '放弃修改',
-          distinguishCancelAndClose: true,
-          type: 'warning'
-        }
-      )
-      await handleSave()
-      next()
-    } catch (action: any) {
-      if (action === 'cancel') {
-        next()
-      } else {
-        next(false) // 关闭弹窗 → 不离开
-      }
-    }
-  } else {
-    next()
-  }
+  if (dirty.value) await handleSave()
+  next()
 })
 
 // ── Ctrl+S 快捷键 ──
@@ -188,33 +166,37 @@ onBeforeUnmount(() => {
 // 仅在 onMounted 之后的 params 变化才触发 — 避免与首次挂载的 loadNote 并发
 watch(() => route.params.id, async (id) => {
   if (id && typeof id === 'string' && noteId.value && id !== noteId.value) {
-    noteId.value = id
+    // 切换笔记前自动保存当前笔记
+    if (dirty.value) await handleSave()
     if (saveTimer) clearTimeout(saveTimer)
-    vditor?.destroy()
-    vditor = null
-    loaded.value = false
+    noteId.value = id
     await loadNote()
   }
 })
 
 async function loadNote() {
-  if (!noteId.value) return // 路由尚未就绪时跳过（由 watch 兜底）
+  if (!noteId.value) return
   try {
     const note = await noteStore.fetchById(noteId.value)
     if (!note) { router.push('/notebooks'); return }
     title.value = note.title
-    lastSavedVersion = note.version  // 同步当前版本，防止 SignalR 事件误判
+    lastSavedVersion = note.version
 
-    // 选中笔记所在目录，让侧栏显示笔记列表（直接进入笔记时有用）
     if (noteStore.selectedCategoryId !== note.categoryId) {
       noteStore.selectedCategoryId = note.categoryId
       noteStore.fetchByCategory(note.categoryId)
     }
 
-    // 先显示 DOM，再初始化编辑器
-    loaded.value = true
-    await nextTick()
-    initEditor(note.content)
+    if (vditor) {
+      // 已有编辑器 → 静默更新内容，不销毁重建
+      vditor.setValue(note.content)
+    } else {
+      // 首次加载 → 创建编辑器
+      loaded.value = true
+      await nextTick()
+      initEditor(note.content)
+    }
+    dirty.value = false
   } catch (err: any) {
     const detail = err?.response?.status
       ? `HTTP ${err.response.status}`
@@ -366,9 +348,6 @@ function handleSaveTagClick() {
 // 重新加载笔记（其他设备修改后）
 async function reloadNote() {
   remoteUpdateBanner.value = false
-  vditor?.destroy()
-  vditor = null
-  loaded.value = false
   await loadNote()
 }
 

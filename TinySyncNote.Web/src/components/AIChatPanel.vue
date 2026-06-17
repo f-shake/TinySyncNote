@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Promotion, Loading, Close } from '@element-plus/icons-vue'
+import { Promotion, Loading, Close, Delete } from '@element-plus/icons-vue'
 import type { AISettings, AIChatMessage } from '../types'
 import { runAIChat } from '../utils/ai'
 import type { EditorActions } from '../utils/ai'
@@ -27,6 +27,11 @@ const inputText = ref('')
 const loading = ref(false)
 const msgListRef = ref<HTMLDivElement | null>(null)
 const history = ref<AIChatMessage[]>([])
+
+function clearMessages() {
+  messages.value = []
+  history.value = []
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -140,6 +145,7 @@ function renderMarkdown(text: string): string {
         <div v-if="loading" class="ai-loading">
           <el-icon class="is-loading"><Loading /></el-icon>
         </div>
+        <el-button v-else :icon="Delete" size="small" text @click="clearMessages" class="ai-clear-btn" />
         <el-input
           v-model="inputText"
           :disabled="loading"
@@ -255,6 +261,8 @@ function renderMarkdown(text: string): string {
   padding: 24px 0;
 }
 
+.ai-clear-btn { flex-shrink: 0; color: var(--el-text-color-secondary); padding: 5px; margin: 0; }
+.ai-clear-btn:hover { color: var(--el-color-danger); }
 .ai-footer {
   display: flex;
   align-items: center;

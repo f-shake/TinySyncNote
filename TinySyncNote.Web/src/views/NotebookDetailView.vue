@@ -7,7 +7,7 @@ import http from '../utils/http'
 import {
   Plus, Document, Download, Upload, Delete
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
@@ -100,13 +100,7 @@ async function handleImport() {
 
 async function handleDeleteNote(noteId: string, noteTitle: string) {
   try {
-    await ElMessageBox.confirm(
-      `确定删除「${noteTitle}」？删除后不可恢复。`,
-      '删除笔记',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
     await noteStore.remove(noteId)
-    ElMessage.success('笔记已删除')
   } catch { /* cancelled */ }
 }
 </script>
