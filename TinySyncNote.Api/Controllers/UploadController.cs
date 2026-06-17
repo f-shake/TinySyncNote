@@ -21,47 +21,54 @@ public class UploadController : ControllerBase
     }
 
     [HttpPost("image")]
-    [DisableRequestSizeLimit]
+    [RequestSizeLimit(300 * 1024 * 1024)] // 300MB 硬限制，实际受 appsettings 控制
     public async Task<ActionResult> UploadImage(
         IFormFile file,
-        [FromQuery] Guid? noteId = null)
+        [FromForm] Guid? noteId = null)
     {
-        if (file == null || file.Length == 0)
-            return BadRequest(new { msg = "请选择文件" });
-
-        if (file.Length > _maxFileSize)
-            return BadRequest(new { msg = $"文件大小超过限制（{_maxFileSize / (1024 * 1024)}MB）" });
-
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg" };
-        if (!allowed.Contains(ext))
-            return BadRequest(new { msg = "不支持的图片格式" });
-
-        await using var ms = new MemoryStream();
-        await file.CopyToAsync(ms);
-
-        var attachment = new NoteAttachment
+        try
         {
-            NoteId = noteId,
-            FileName = file.FileName,
-            ContentType = file.ContentType ?? "application/octet-stream",
-            Data = ms.ToArray(),
-            FileSize = file.Length
-        };
+            if (file == null || file.Length == 0)
+                return BadRequest(new { msg = "请选择文件" });
 
-        _db.NoteAttachments.Add(attachment);
-        await _db.SaveChangesAsync();
+            if (file.Length > _maxFileSize)
+                return BadRequest(new { msg = $"文件大小超过限制（{_maxFileSize / (1024 * 1024)}MB）" });
 
-        var url = $"/api/attachment/{attachment.Id}";
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg" };
+            if (!allowed.Contains(ext))
+                return BadRequest(new { msg = "不支持的图片格式" });
 
-        return Ok(new
-        {
-            code = 0,
-            data = new
+            await using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+
+            var attachment = new NoteAttachment
             {
-                errFiles = Array.Empty<string>(),
-                succMap = new Dictionary<string, string> { { file.FileName, url } }
-            }
-        });
+                NoteId = noteId,
+                FileName = file.FileName,
+                ContentType = file.ContentType ?? "application/octet-stream",
+                Data = ms.ToArray(),
+                FileSize = file.Length
+            };
+
+            _db.NoteAttachments.Add(attachment);
+            await _db.SaveChangesAsync();
+
+            var url = $"/api/attachment/{attachment.Id}";
+
+            return Ok(new
+            {
+                code = 0,
+                data = new
+                {
+                    errFiles = Array.Empty<string>(),
+                    succMap = new Dictionary<string, string> { { file.FileName, url } }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { msg = $"上传失败: {ex.Message}" });
+        }
     }
 }

@@ -239,11 +239,12 @@ function initEditor(content: string) {
     ],
     upload: {
       url: '/api/upload/image',
-      extraData: { noteId: noteId.value },
       accept: 'image/*',
       multiple: true,
       fieldName: 'file',
-      linkToImgUrl: ''
+      linkToImgUrl: '',
+      extraData: { noteId: noteId.value },
+      setHeaders: () => ({ 'Authorization': `Bearer ${localStorage.getItem('tsn_access_token')}` })
     },
     input: () => {
       dirty.value = true

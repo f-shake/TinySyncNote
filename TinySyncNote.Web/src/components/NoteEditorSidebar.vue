@@ -158,6 +158,7 @@ async function createNoteInCategory(catId: string) {
     const note = await noteStore.create(catId, '无标题笔记')
     if (note) {
       noteStore.selectedCategoryId = catId
+      await noteStore.fetchByCategory(catId)
       router.push(`/note/${note.id}?nb=${notebookId.value}`)
     }
   } catch { /* handled by store */ }

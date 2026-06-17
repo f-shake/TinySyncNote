@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using TinySyncNote.Core.Data;
@@ -8,6 +9,12 @@ using TinySyncNote.Core.Services;
 using TinySyncNote.Api.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Kestrel 请求体大小无上限（由 UploadController 按配置校验）
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = null;
+});
 
 // ────────────── 数据库（默认 SQLite） ──────────────
 // ├─ 切换 PostgreSQL：取消注释 Directory.Packages.props + Api.csproj 中 Npgsql 相关行
@@ -88,6 +95,13 @@ builder.Services.AddAuthorization();
 // ────────────── SignalR ──────────────
 builder.Services.AddSignalR();
 
+// ────────────── 上传文件大小（由 appsettings 控制，不依赖硬编码属性） ──────────────
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = long.MaxValue;
+    options.ValueLengthLimit = int.MaxValue;
+});
+
 // ────────────── 服务注册 ──────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<INotebookService, NotebookService>();
@@ -121,6 +135,13 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
 var app = builder.Build();
+
+// 全局解除请求体大小限制（由 UploadController 按 appsettings 校验）
+app.Use((context, next) =>
+{
+    context.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = null;
+    return next();
+});
 
 // ────────────── 中间件管道 ──────────────
 if (app.Environment.IsDevelopment())
