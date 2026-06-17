@@ -84,7 +84,7 @@ async function send() {
     )
     // 更新历史（从最新的 user+assistant pair 重建）
     const msgs = messages.value
-    const userMsg = msgs.findLast(m => m.role === 'user')?.content || text
+    const userMsg = [...msgs].reverse().find(m => m.role === 'user')?.content || text
     const assistantText = msgs.filter(m => m.role === 'assistant').map(m => m.content).join('\n')
     history.value = [
       ...history.value,
