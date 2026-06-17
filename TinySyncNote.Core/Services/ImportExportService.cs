@@ -106,16 +106,67 @@ public class ImportExportService : IImportExportService
             .Include(n => n.Category)
             .ToListAsync();
 
+        // 第一遍：统计目录路径出现次数，同名目录全部编号从 1 开始
+        var rawPaths = categories.ToDictionary(c => c.Id, c => BuildRawCategoryPath(c, categories));
+        var pathTotal = new Dictionary<string, int>();
+        foreach (var raw in rawPaths.Values)
+            pathTotal[raw] = pathTotal.GetValueOrDefault(raw) + 1;
+
+        var catPathLookup = new Dictionary<Guid, string>();
+        var pathIdx = new Dictionary<string, int>();
+        foreach (var cat in categories)
+        {
+            var raw = rawPaths[cat.Id];
+            if (pathTotal[raw] > 1)
+            {
+                pathIdx[raw] = pathIdx.GetValueOrDefault(raw) + 1;
+                catPathLookup[cat.Id] = $"{raw} ({pathIdx[raw]})";
+            }
+            else
+            {
+                catPathLookup[cat.Id] = raw;
+            }
+        }
+
+        // 第二遍：统计每个目录下笔记标题出现次数
+        var titleTotal = new Dictionary<string, Dictionary<string, int>>();
+        foreach (var note in notes)
+        {
+            var catPath = catPathLookup[note.CategoryId];
+            var safeName = SanitizeFileName(note.Title);
+            if (!titleTotal.TryGetValue(catPath, out var dirTotals))
+                titleTotal[catPath] = dirTotals = [];
+            dirTotals[safeName] = dirTotals.GetValueOrDefault(safeName) + 1;
+        }
+
         using var ms = new MemoryStream();
         using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
         {
+            var titleIdx = new Dictionary<string, Dictionary<string, int>>();
+
             foreach (var note in notes)
             {
-                var catPath = BuildCategoryPath(note.Category, categories);
+                var catPath = catPathLookup[note.CategoryId];
                 var safeName = SanitizeFileName(note.Title);
-                var entryName = string.IsNullOrEmpty(catPath)
-                    ? $"{safeName}.md"
-                    : $"{catPath}/{safeName}.md";
+
+                string entryName;
+                if (titleTotal[catPath][safeName] > 1)
+                {
+                    // 有同名笔记 → 全部编号从 1 开始
+                    if (!titleIdx.TryGetValue(catPath, out var dirIdx))
+                        titleIdx[catPath] = dirIdx = [];
+                    dirIdx[safeName] = dirIdx.GetValueOrDefault(safeName) + 1;
+                    var idx = dirIdx[safeName];
+                    entryName = string.IsNullOrEmpty(catPath)
+                        ? $"{safeName} ({idx}).md"
+                        : $"{catPath}/{safeName} ({idx}).md";
+                }
+                else
+                {
+                    entryName = string.IsNullOrEmpty(catPath)
+                        ? $"{safeName}.md"
+                        : $"{catPath}/{safeName}.md";
+                }
 
                 var entry = archive.CreateEntry(entryName);
                 using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
@@ -164,6 +215,7 @@ public class ImportExportService : IImportExportService
     public async Task<ImportResult> ImportZipAsync(Guid notebookId, Guid userId, Stream zipStream)
     {
         var result = new ImportResult();
+        ClearCategoryCache();
 
         var notebook = await _db.Notebooks
             .FirstOrDefaultAsync(n => n.Id == notebookId && n.UserId == userId)
@@ -243,20 +295,28 @@ public class ImportExportService : IImportExportService
 
     private async Task<Category> GetOrCreateCategory(Guid notebookId, string path)
     {
+        // 内存缓存：避免同一批次内重复查 DB（新创建的 category 尚未持久化）
+        if (!_catCache.TryGetValue(notebookId, out var nbCache))
+            _catCache[notebookId] = nbCache = [];
+
+        var key = $"{notebookId}:{path}";
+        if (nbCache.TryGetValue(key, out var cached))
+            return cached;
+
         if (string.IsNullOrEmpty(path))
         {
             // 使用根目录（第一个或创建）
             var root = await _db.Categories
                 .FirstOrDefaultAsync(c => c.NotebookId == notebookId && c.ParentCategoryId == null);
-            if (root != null) return root;
-
-            root = new Category
+            if (root != null)
             {
-                NotebookId = notebookId,
-                Name = "导入",
-                SortOrder = 0
-            };
+                nbCache[key] = root;
+                return root;
+            }
+
+            root = new Category { NotebookId = notebookId, Name = "导入", SortOrder = 0 };
             _db.Categories.Add(root);
+            nbCache[key] = root;
             return root;
         }
 
@@ -266,17 +326,18 @@ public class ImportExportService : IImportExportService
 
         foreach (var part in parts)
         {
+            var catName = StripDedupSuffix(part);
             current = await _db.Categories
                 .FirstOrDefaultAsync(c => c.NotebookId == notebookId
                                        && c.ParentCategoryId == parentId
-                                       && c.Name == part);
+                                       && c.Name == catName);
             if (current == null)
             {
                 current = new Category
                 {
                     NotebookId = notebookId,
                     ParentCategoryId = parentId,
-                    Name = part,
+                    Name = catName,
                     SortOrder = 0
                 };
                 _db.Categories.Add(current);
@@ -284,10 +345,16 @@ public class ImportExportService : IImportExportService
             parentId = current.Id;
         }
 
+        nbCache[key] = current!;
         return current!;
     }
 
-    private static string BuildCategoryPath(Category category, List<Category> allCategories)
+    // 导入过程中用于缓存 category 查找结果，避免同批导入重复创建同名目录
+    private readonly Dictionary<Guid, Dictionary<string, Category>> _catCache = [];
+
+    private void ClearCategoryCache() => _catCache.Clear();
+
+    private static string BuildRawCategoryPath(Category category, List<Category> allCategories)
     {
         var parts = new List<string>();
         var current = category;
@@ -305,6 +372,17 @@ public class ImportExportService : IImportExportService
         var invalid = Path.GetInvalidFileNameChars();
         var sanitized = new string(name.Where(c => !invalid.Contains(c)).ToArray());
         return string.IsNullOrWhiteSpace(sanitized) ? "untitled" : sanitized.Trim();
+    }
+
+    /// <summary>脱掉导出时追加的 " (N)" 编号后缀</summary>
+    private static string StripDedupSuffix(string name)
+    {
+        if (name.Length < 4 || name[^1] != ')') return name;
+        var parenIdx = name.LastIndexOf(" (", StringComparison.Ordinal);
+        if (parenIdx < 0) return name;
+        if (int.TryParse(name[(parenIdx + 2)..^1], out _))
+            return name[..parenIdx];
+        return name;
     }
 
     private async Task VerifyNotebookAccess(Guid notebookId, Guid userId)

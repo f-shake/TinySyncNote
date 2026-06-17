@@ -60,6 +60,14 @@ public class CategoryService : ICategoryService
                 throw new KeyNotFoundException("父目录不存在");
         }
 
+        // 检查同层同名
+        var duplicate = await _db.Categories.AnyAsync(c =>
+            c.NotebookId == request.NotebookId
+            && c.ParentCategoryId == request.ParentCategoryId
+            && c.Name == request.Name);
+        if (duplicate)
+            throw new InvalidOperationException("同一目录下已存在同名目录");
+
         var maxOrder = await _db.Categories
             .Where(c => c.NotebookId == request.NotebookId
                      && c.ParentCategoryId == request.ParentCategoryId)
@@ -87,6 +95,15 @@ public class CategoryService : ICategoryService
 
         if (category.Notebook.UserId != userId)
             throw new UnauthorizedAccessException("无权操作");
+
+        // 检查同层同名（排除自身）
+        var duplicate = await _db.Categories.AnyAsync(c =>
+            c.Id != id
+            && c.NotebookId == category.NotebookId
+            && c.ParentCategoryId == request.ParentCategoryId
+            && c.Name == request.Name);
+        if (duplicate)
+            throw new InvalidOperationException("同一目录下已存在同名目录");
 
         category.Name = request.Name;
         category.SortOrder = request.SortOrder;

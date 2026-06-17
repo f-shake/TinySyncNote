@@ -3,6 +3,7 @@ import { onMounted, watch, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNoteStore } from '../stores/note'
 import { useNotebookStore } from '../stores/notebook'
+import { useCategoryStore } from '../stores/category'
 import http from '../utils/http'
 import {
   Plus, Document, Download, Upload, Delete
@@ -13,6 +14,7 @@ const route = useRoute()
 const router = useRouter()
 const noteStore = useNoteStore()
 const notebookStore = useNotebookStore()
+const categoryStore = useCategoryStore()
 
 const notebookId = computed(() => route.params.id as string)
 const currentNotebookName = computed(() => {
@@ -81,12 +83,26 @@ async function handleImport() {
   try {
     const formData = new FormData()
     formData.append('file', importFile.value)
-    const url = `/api/import/markdown?categoryId=${noteStore.selectedCategoryId || ''}`
-    await http.post(url, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    const isZip = importFile.value.name.endsWith('.zip')
+
+    if (isZip) {
+      await http.post(`/api/export/import/zip?notebookId=${notebookId.value}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+    } else {
+      if (!noteStore.selectedCategoryId) {
+        ElMessage.warning('请先在左侧选择一个目录')
+        return
+      }
+      await http.post(`/api/export/import/markdown?categoryId=${noteStore.selectedCategoryId}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+    }
     ElMessage.success('导入成功')
     showImportDialog.value = false
+    // 刷新目录树（新导入的分类可能不在已有树中）
+    categoryStore.fetchTree(notebookId.value)
+    // 刷新当前选中的笔记列表
     if (noteStore.selectedCategoryId) {
       noteStore.fetchByCategory(noteStore.selectedCategoryId)
     }

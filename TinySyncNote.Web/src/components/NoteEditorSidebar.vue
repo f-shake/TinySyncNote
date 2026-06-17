@@ -107,11 +107,12 @@ watch(treeData, () => {
 })
 
 // 点击节点
-function handleNodeClick(data: NoteTreeData) {
+async function handleNodeClick(data: NoteTreeData) {
   if (data.type === 'cat') {
     const catId = data.id.replace('cat:', '')
+    // 先等笔记加载完再更新 selectedCategoryId，避免 treeData 重算两次导致闪烁
+    await noteStore.fetchByCategory(catId)
     noteStore.selectedCategoryId = catId
-    noteStore.fetchByCategory(catId)
   } else {
     const noteId = data.id.replace('note:', '')
     router.push(`/note/${noteId}?nb=${notebookId.value}`)
@@ -171,8 +172,8 @@ function openCreateCategory(parentId?: string) {
     if (!nbId) return
     const id = await categoryStore.create(nbId, value, parentId)
     if (id) {
+      await noteStore.fetchByCategory(id)
       noteStore.selectedCategoryId = id
-      noteStore.fetchByCategory(id)
     }
   }).catch(() => {})
 }
@@ -219,8 +220,10 @@ async function handleDeleteNote(e: Event, noteId: string, noteTitle: string) {
             <template v-else>
               <el-icon :size="12" color="#409eff"><Document /></el-icon>
               <span class="tree-label">{{ data.label }}</span>
-              <el-button text :icon="Delete" type="danger" size="small" class="note-del"
-                @click.stop="(e: MouseEvent) => handleDeleteNote(e, data.id.replace('note:', ''), data.label)" />
+              <span class="tree-actions">
+                <el-button text :icon="Delete" type="danger" size="small"
+                  @click.stop="(e: MouseEvent) => handleDeleteNote(e, data.id.replace('note:', ''), data.label)" />
+              </span>
             </template>
           </div>
         </template>
@@ -263,11 +266,9 @@ async function handleDeleteNote(e: Event, noteId: string, noteTitle: string) {
 .tree-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tree-label.dim { color: var(--el-text-color-secondary); }
 .nb { font-size: 11px; color: var(--el-text-color-secondary); background: var(--el-fill-color); padding: 0 6px; border-radius: 5px; flex-shrink: 0; margin-left: auto; margin-right: 6px; }
-.tree-actions { display: flex; gap: 4px; flex-shrink: 0; }
-@media (hover: hover) { .tree-actions { visibility: hidden; } .tree-slot:hover .tree-actions { visibility: visible; } }
+.tree-actions { display: flex; gap: 4px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+.tree-slot:hover .tree-actions { opacity: 1; }
 @media (hover: none) { .tree-actions { opacity: 0.5; } }
-
-.note-del { flex-shrink: 0; }
 
 /* 新建目录 */
 .tree-action {
