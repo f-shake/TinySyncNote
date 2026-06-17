@@ -200,7 +200,9 @@ export async function runAIChat(
   history: AIChatMessage[],
   settings: AISettings,
   editor: EditorActions,
-  onText?: (chunk: string) => void  // 可选：流式回调
+  onText?: (chunk: string) => void,      // 流式文本回调
+  onNewSegment?: () => void,             // 新一轮 AI 回复开始（用于分割多轮回答）
+  onToolCall?: (name: string) => void    // AI 调用了某个工具
 ): Promise<{ reply: string; updatedHistory: AIChatMessage[] }> {
   const messages: AIChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
@@ -214,6 +216,9 @@ export async function runAIChat(
   while (maxRounds > 0) {
     maxRounds--
 
+    // 新一轮回答开始
+    onNewSegment?.()
+
     // 使用流式调用
     const result = await callAIStream(messages, settings, (chunk) => {
       if (onText) onText(chunk)
@@ -225,10 +230,11 @@ export async function runAIChat(
       const reply: AIChatMessage = { role: 'assistant', content: result.content || '', tool_calls: result.tool_calls }
       messages.push(reply)
       for (const tc of result.tool_calls) {
+        // 通知 UI 显示工具调用
+        onToolCall?.(tc.function.name)
         const r = executeToolCall(tc.function, editor)
         messages.push({ role: 'tool', tool_call_id: tc.id, content: r })
       }
-      // 保留已显示的文本（AI 可能在调用工具前已经说了一些话）
       continue
     }
 

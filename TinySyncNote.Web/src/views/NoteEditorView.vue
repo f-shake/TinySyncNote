@@ -28,10 +28,38 @@ const loaded = ref(false)
 const remoteUpdateBanner = ref(false)
 const showSnapshotDrawer = ref(false)
 const showShareDialog = ref(false)
-const showAIChat = ref(false)
+const SHOW_AI_KEY = 'tsn_show_ai'
+const showAIChat = ref(localStorage.getItem(SHOW_AI_KEY) === 'true')
+watch(showAIChat, (v) => localStorage.setItem(SHOW_AI_KEY, String(v)))
 const aiSettings = ref<AISettings | null>(null)
 const previewSnapshot = ref<NoteSnapshot | null>(null)
 const dirty = ref(false)   // 是否有未保存修改
+const lastSelectedText = ref('') // 追踪编辑器选中文本，供 AI 使用
+
+// ── AI 面板拖拽调整宽度 ──
+const AI_PANEL_WIDTH_KEY = 'tsn_ai_panel_width'
+const aiPanelWidth = ref(parseInt(localStorage.getItem(AI_PANEL_WIDTH_KEY) || '360', 10))
+const aiResizing = ref(false)
+
+function startAiResize(e: MouseEvent) {
+  e.preventDefault()
+  aiResizing.value = true
+  const startX = e.clientX
+  const startW = aiPanelWidth.value
+
+  function onMove(ev: MouseEvent) {
+    const w = startW - (ev.clientX - startX) // 向右拖 → AI 面板变窄
+    aiPanelWidth.value = Math.max(200, Math.min(600, w))
+  }
+  function onUp() {
+    aiResizing.value = false
+    localStorage.setItem(AI_PANEL_WIDTH_KEY, String(aiPanelWidth.value))
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 
 const AUTO_SAVE_KEY = 'tsn_autosave_interval'
 
@@ -243,6 +271,8 @@ function initEditor(content: string) {
     },
     input: () => {
       dirty.value = true
+      // 追踪选中文本
+      if (vditor) lastSelectedText.value = vditor.getSelection() || ''
       // 防抖自动保存
       if (saveTimer) clearTimeout(saveTimer)
       saveTimer = setTimeout(autoSave, getAutoSaveInterval())
@@ -264,6 +294,22 @@ function initEditor(content: string) {
           localStorage.setItem('vditorMode', mode)
         }
       }, 1000)
+
+      // 追踪编辑器选中文本，供 AI 使用（点击 AI 面板后选区会丢失）
+      function trackSelection() {
+        if (!vditor) return
+        const sel = vditor.getSelection() || window.getSelection()?.toString() || ''
+        // 只保存非空选区，防止失去焦点时覆盖为空白
+        if (sel) lastSelectedText.value = sel
+      }
+      // 在编辑器区域内鼠标松手时保存选中文本（发生在 blur 之前）
+      document.addEventListener('mouseup', (e) => {
+        if (vditor && editorRef.value?.contains(e.target as Node)) trackSelection()
+      })
+      // 键盘选中（Shift+方向键等）
+      document.addEventListener('keyup', (e) => {
+        if (vditor && editorRef.value?.contains(e.target as Node)) trackSelection()
+      })
     }
   })
 }
@@ -432,7 +478,7 @@ const editorActions = computed(() => ({
     dirty.value = true
     startSaveTimer()
   },
-  getSelectedText: () => vditor?.getSelection() || '',
+  getSelectedText: () => lastSelectedText.value || vditor?.getSelection() || '',
   setTitle: (t: string) => { title.value = t; dirty.value = true; startSaveTimer() }
 }))
 
@@ -518,11 +564,21 @@ function onTitleChange() {
         <div ref="editorRef" class="vditor-wrap" />
       </div>
 
+      <!-- AI 面板拖拽手柄 -->
+      <div
+        v-if="showAIChat"
+        class="drag-handle-v"
+        :class="{ active: aiResizing }"
+        @mousedown="startAiResize"
+      />
+
       <!-- ═══ AI 助手 ═══ -->
       <AIChatPanel
+        v-show="showAIChat"
         :visible="showAIChat"
         :editor="editorActions"
         :settings="aiSettings"
+        :style="{ width: aiPanelWidth + 'px', flexShrink: 0 }"
         @close="showAIChat = false"
       />
     </div>
@@ -671,7 +727,6 @@ function onTitleChange() {
 
 @media (min-width: 721px) {
   .editor-body { flex-direction: row; }
-  .editor-body > :deep(.ai-panel) { width: 360px; flex-shrink: 0; }
 }
 
 .vditor-wrap {
@@ -686,6 +741,27 @@ function onTitleChange() {
 
 .vditor-wrap :deep(.vditor-toolbar) {
   border-bottom: 1px solid var(--el-border-color-light) !important;
+}
+
+/* ── 拖拽手柄 ── */
+.drag-handle-v {
+  flex-shrink: 0;
+  width: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 10;
+  transition: width 0.15s, background 0.15s;
+}
+.drag-handle-v::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -4px; right: -4px;
+}
+.drag-handle-v:hover,
+.drag-handle-v.active {
+  width: 3px;
+  background: var(--el-color-primary);
 }
 
 /* ── 快照抽屉 ── */
@@ -808,6 +884,8 @@ function onTitleChange() {
 @media (max-width: 720px) {
   .toolbar-actions .el-tag { display: none; }
   .mobile-back-btn { display: inline-flex; }
+  .drag-handle-v { display: none; }
+  .editor-body > .ai-panel { width: auto !important; flex-shrink: unset !important; }
 }
 
 @media (min-width: 721px) {

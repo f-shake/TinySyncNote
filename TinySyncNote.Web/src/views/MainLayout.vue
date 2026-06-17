@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useNotebookStore } from '../stores/notebook'
 import { useRoute, useRouter } from 'vue-router'
@@ -43,6 +43,31 @@ const currentNotebookName = computed(() => {
 
 function handleMoreCommand(cmd: string) {
   cmd === 'toggle-dark' ? toggleDark() : router.push(cmd)
+}
+
+// ── 侧栏拖拽调整宽度 ──
+const SIDEBAR_WIDTH_KEY = 'tsn_sidebar_width'
+const sidebarWidth = ref(parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '280', 10))
+const sidebarResizing = ref(false)
+
+function startSidebarResize(e: MouseEvent) {
+  e.preventDefault()
+  sidebarResizing.value = true
+  const startX = e.clientX
+  const startW = sidebarWidth.value
+
+  function onMove(ev: MouseEvent) {
+    const w = startW + (ev.clientX - startX)
+    sidebarWidth.value = Math.max(160, Math.min(500, w))
+  }
+  function onUp() {
+    sidebarResizing.value = false
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value))
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
 }
 </script>
 
@@ -93,11 +118,16 @@ function handleMoreCommand(cmd: string) {
         </div>
       </template>
 
-      <!-- ── 编辑模式：树状导航（1/3）+ 编辑器（2/3） ── -->
+      <!-- ── 编辑模式：树状导航 + 编辑器 + AI ── -->
       <template v-else-if="isEditor">
-        <div class="editor-sidebar-wrap">
+        <div class="editor-sidebar-wrap" :style="{ width: sidebarWidth + 'px', flex: 'none' }">
           <NoteEditorSidebar />
         </div>
+        <div
+          class="drag-handle-v"
+          :class="{ active: sidebarResizing }"
+          @mousedown="startSidebarResize"
+        />
         <main class="editor-area">
           <router-view />
         </main>
@@ -145,11 +175,46 @@ function handleMoreCommand(cmd: string) {
 
 .editor-area { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 
+/* ── 拖拽手柄 ── */
+.drag-handle-v {
+  flex-shrink: 0;
+  width: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 10;
+  transition: width 0.15s, background 0.15s;
+}
+/* 透明宽 hit area，方便鼠标捕获 */
+.drag-handle-v::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -4px; right: -4px;
+}
+.drag-handle-v:hover,
+.drag-handle-v.active {
+  width: 3px;
+  background: var(--el-color-primary);
+}
+
+/* 侧栏内部填满父容器宽度 */
+.editor-sidebar-wrap {
+  display: flex;
+  overflow: hidden;
+}
+.editor-sidebar-wrap :deep(.tree-panel) {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
 /* ── 全宽 ── */
 .main-full { flex: 1; overflow-y: auto; background: var(--el-bg-color-page); }
 
 @media (max-width: 720px) {
   .col-notes { flex: 1; }
   .editor-sidebar-wrap { display: none; }
+  .drag-handle-v { display: none; }
 }
 </style>

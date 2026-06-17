@@ -18,7 +18,7 @@ const emit = defineEmits<{
 }>()
 
 interface DisplayMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
 }
 
@@ -49,18 +49,50 @@ async function send() {
   messages.value.push({ role: 'user', content: text })
   scrollToBottom()
 
-  messages.value.push({ role: 'assistant', content: '' })
-  const assistantMsg = messages.value[messages.value.length - 1]
   loading.value = true
 
   try {
-    const { updatedHistory } = await runAIChat(text, history.value, props.settings, props.editor, (chunk) => {
-      assistantMsg.content += chunk
-      scrollToBottom()
-    })
-    history.value = updatedHistory
+    await runAIChat(
+      text, history.value, props.settings, props.editor,
+      // onText — 追加到最新的 assistant 消息
+      (chunk) => {
+        const last = messages.value[messages.value.length - 1]
+        if (last?.role === 'assistant') last.content += chunk
+        scrollToBottom()
+      },
+      // onNewSegment — 新的 AI 回复段
+      () => {
+        messages.value.push({ role: 'assistant', content: '' })
+      },
+      // onToolCall — 显示工具调用
+      (name) => {
+        // 如果前一条 assistant 消息是空的（AI 没说话直接调工具），删掉它
+        const prev = messages.value[messages.value.length - 1]
+        if (prev?.role === 'assistant' && !prev.content) {
+          messages.value.pop()
+        }
+        const toolLabels: Record<string, string> = {
+          getNoteContent: '读取笔记内容',
+          replaceNoteContent: '替换笔记内容',
+          insertAtCursor: '在光标处插入',
+          getSelectedText: '获取选中文本',
+          setTitle: '修改标题'
+        }
+        messages.value.push({ role: 'tool', content: toolLabels[name] || name })
+        scrollToBottom()
+      }
+    )
+    // 更新历史（从最新的 user+assistant pair 重建）
+    const msgs = messages.value
+    const userMsg = msgs.findLast(m => m.role === 'user')?.content || text
+    const assistantText = msgs.filter(m => m.role === 'assistant').map(m => m.content).join('\n')
+    history.value = [
+      ...history.value,
+      { role: 'user', content: userMsg },
+      { role: 'assistant', content: assistantText }
+    ]
   } catch (err: any) {
-    assistantMsg.content = `出错了：${err.message}`
+    messages.value.push({ role: 'assistant', content: `出错了：${err.message}` })
   } finally {
     loading.value = false
     scrollToBottom()
@@ -78,16 +110,26 @@ function renderMarkdown(text: string): string {
 </script>
 
 <template>
-  <div v-if="visible" class="ai-panel">
+  <Transition name="slide">
+    <div v-if="visible" class="ai-panel">
       <div class="ai-panel-header">
         <span>AI 助手</span>
         <el-button text :icon="Close" size="small" @click="emit('close')" />
       </div>
 
       <div ref="msgListRef" class="ai-msg-list" v-if="messages.length > 0">
-        <div v-for="(msg, i) in messages" :key="i" class="msg" :class="msg.role">
-          <div class="msg-label">{{ msg.role === 'user' ? '你' : 'AI' }}</div>
-          <div class="msg-body" v-html="renderMarkdown(msg.content)" />
+        <div v-for="(msg, i) in messages" :key="i" class="msg" :class="msg.role === 'tool' ? 'assistant' : msg.role">
+          <template v-if="msg.role === 'tool'">
+            <div class="msg-label">AI</div>
+            <div class="msg-body">
+              <span class="msg-tool-icon">🔧</span>
+              <span class="msg-tool-text">调用工具：{{ msg.content }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="msg-label">{{ msg.role === 'user' ? '你' : 'AI' }}</div>
+            <div class="msg-body" v-html="renderMarkdown(msg.content)" />
+          </template>
         </div>
       </div>
       <div v-else class="ai-empty">
@@ -111,6 +153,7 @@ function renderMarkdown(text: string): string {
         </el-input>
       </div>
     </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -120,11 +163,25 @@ function renderMarkdown(text: string): string {
   border-top: 1px solid var(--el-border-color-light);
   background: var(--el-bg-color);
   flex-shrink: 0;
-  animation: slideInRight 0.25s ease-out;
+}
+@media (max-width: 720px) {
+  .ai-panel { max-height: 40vh; }
 }
 
+/* ── Transition 动画 ── */
+.slide-enter-active, .slide-leave-active {
+  transition: transform 0.25s ease-out;
+}
+.slide-enter-from, .slide-leave-to {
+  transform: translateX(100%);
+}
 @media (max-width: 720px) {
-  .ai-panel { animation: slideInUp 0.25s ease-out; max-height: 40vh; }
+  .slide-enter-active, .slide-leave-active {
+    transition: transform 0.25s ease-out;
+  }
+  .slide-enter-from, .slide-leave-to {
+    transform: translateY(100%);
+  }
 }
 
 .ai-panel-header {
@@ -175,6 +232,10 @@ function renderMarkdown(text: string): string {
   margin-bottom: 2px;
 }
 
+/* ── 工具调用（放在 AI 气泡内） ── */
+.msg-tool-icon { font-size: 12px; }
+.msg-tool-text { font-size: 12px; color: var(--el-text-color-secondary); }
+
 .msg-body { color: var(--el-text-color-primary); word-break: break-word; }
 .msg-body :deep(p) { margin: 0 0 6px 0; }
 .msg-body :deep(p:last-child) { margin-bottom: 0; }
@@ -191,6 +252,7 @@ function renderMarkdown(text: string): string {
   font-size: 13px;
   color: var(--el-text-color-secondary);
   min-height: 0;
+  padding: 24px 0;
 }
 
 .ai-footer {
@@ -208,13 +270,4 @@ function renderMarkdown(text: string): string {
 
 .ai-footer .el-input { flex: 1; }
 
-@keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-@keyframes slideInUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
-}
 </style>
