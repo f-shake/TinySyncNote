@@ -254,7 +254,7 @@ function initEditor(content: string) {
           if (noteId.value) formData.append('noteId', noteId.value)
 
           try {
-            const resp = await fetch('/api/upload/image', {
+            const resp = await fetch(`${apiBase}/api/upload/image`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}` },
               body: formData,
@@ -268,7 +268,8 @@ function initEditor(content: string) {
               ElMessage.error(`上传失败: ${file.name}`)
               continue
             }
-            const url = (Object.values(json.data.succMap)[0] ?? '') as string
+            let url = (Object.values(json.data.succMap)[0] ?? '') as string
+            if (apiBase && url.startsWith('/')) url = apiBase + url
             if (!url) continue
 
             if (file.type.startsWith('image/')) {
@@ -469,6 +470,7 @@ function goBack() {
   else router.push('/notebooks')
 }
 
+const apiBase = http.defaults.baseURL || ''
 const editorActions = computed(() => ({
   getNoteContent: () => vditor?.getValue() || '',
   replaceNoteContent: (content: string) => {
