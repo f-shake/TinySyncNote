@@ -59,6 +59,74 @@ export const AI_TOOLS = [
         required: ['title']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getTitle',
+      description: '获取当前笔记的标题',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getNoteInfo',
+      description: '获取当前笔记的元信息，包括标题、创建时间、更新时间、版本号、所在分类ID',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getCategoryTree',
+      description: '获取当前笔记本的目录树结构（分类名称、ID、层级关系和笔记数量）',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'appendToContent',
+      description: '在笔记末尾追加文本',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: '要追加的文本' }
+        },
+        required: ['text']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'replaceAll',
+      description: '替换笔记内容中所有匹配的文本',
+      parameters: {
+        type: 'object',
+        properties: {
+          oldText: { type: 'string', description: '要查找的原文' },
+          newText: { type: 'string', description: '替换后的新文本' }
+        },
+        required: ['oldText', 'newText']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'replaceOnce',
+      description: '替换笔记内容中唯一一处匹配的文本。如果匹配数量不是恰好 1 处则报错，防止误替换',
+      parameters: {
+        type: 'object',
+        properties: {
+          oldText: { type: 'string', description: '要查找的原文' },
+          newText: { type: 'string', description: '替换后的新文本' }
+        },
+        required: ['oldText', 'newText']
+      }
+    }
   }
 ]
 
@@ -77,8 +145,14 @@ export const SYSTEM_PROMPT = `# 角色
 
 # 工具使用规则
 - 需要了解当前内容时 → getNoteContent
+- 需要了解标题或元信息时 → getTitle / getNoteInfo
+- 需要查看目录结构时 → getCategoryTree
 - 需要整体重写、翻译、格式化或大篇幅修改时 → replaceNoteContent（保留整体结构）
 - 需要在特定位置添加内容时 → insertAtCursor（先 getNoteContent 确定位置）
+- 需要追加到末尾时 → appendToContent
+- 需要替换某段文本时 → 优先用 replaceAll 或 replaceOnce，而不是全文替换
+- 替换只有一个匹配时用 replaceOnce（安全，会校验唯一性）
+- 替换多个匹配时用 replaceAll
 - 需要修改标题时 → setTitle
 - 用户选中了特定文本提问时 → 先 getSelectedText 获取选中的内容
 
@@ -89,6 +163,7 @@ export const SYSTEM_PROMPT = `# 角色
 - 保持原笔记的语言，除非用户明确要求翻译
 - 列表、代码块、表格等复杂结构要完整保留
 - 当用户要求"优化"或"改进"时，保持原意不变，只改进表达
+- **能用 replaceAll / replaceOnce 做局部替换时，不要用 replaceNoteContent 做全文替换**
 
 # 输出风格
 - 简洁、直接，用中文回复
@@ -102,6 +177,12 @@ export interface EditorActions {
   insertAtCursor: (text: string) => void
   getSelectedText: () => string
   setTitle: (title: string) => void
+  getTitle: () => string
+  getNoteInfo: () => string
+  getCategoryTree: () => string
+  appendToContent: (text: string) => void
+  replaceAll: (oldText: string, newText: string) => string
+  replaceOnce: (oldText: string, newText: string) => string
 }
 
 export function executeToolCall(toolCall: { name: string; arguments: string }, editor: EditorActions): string {
@@ -118,6 +199,19 @@ export function executeToolCall(toolCall: { name: string; arguments: string }, e
     case 'setTitle':
       editor.setTitle(args.title)
       return `标题已改为：${args.title}`
+    case 'getTitle':
+      return `当前标题：${editor.getTitle()}`
+    case 'getNoteInfo':
+      return editor.getNoteInfo()
+    case 'getCategoryTree':
+      return editor.getCategoryTree()
+    case 'appendToContent':
+      editor.appendToContent(args.text)
+      return `已在末尾追加内容`
+    case 'replaceAll':
+      return editor.replaceAll(args.oldText, args.newText)
+    case 'replaceOnce':
+      return editor.replaceOnce(args.oldText, args.newText)
     default: return `未知工具：${toolCall.name}`
   }
 }

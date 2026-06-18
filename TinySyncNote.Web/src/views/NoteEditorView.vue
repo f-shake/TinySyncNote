@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useNoteStore } from '../stores/note'
 import { useSnapshotStore } from '../stores/snapshot'
+import { useCategoryStore } from '../stores/category'
 import type { NoteSnapshot } from '../types'
 import { ElMessage, ElNotification } from 'element-plus'
 import { Delete, Clock, Share, Promotion, ArrowLeft } from '@element-plus/icons-vue'
@@ -19,6 +20,7 @@ const route = useRoute()
 const router = useRouter()
 const noteStore = useNoteStore()
 const snapshotStore = useSnapshotStore()
+const categoryStore = useCategoryStore()
 
 const noteId = ref('')
 const title = ref('')
@@ -480,7 +482,47 @@ const editorActions = computed(() => ({
     startSaveTimer()
   },
   getSelectedText: () => lastSelectedText.value || vditor?.getSelection() || '',
-  setTitle: (t: string) => { title.value = t; dirty.value = true; startSaveTimer() }
+  setTitle: (t: string) => { title.value = t; dirty.value = true; startSaveTimer() },
+  getTitle: () => title.value,
+  getNoteInfo: () => {
+    const n = noteStore.currentNote
+    if (!n) return '（笔记未加载）'
+    return JSON.stringify({
+      id: n.id,
+      title: n.title,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+      version: n.version,
+      categoryId: n.categoryId
+    })
+  },
+  getCategoryTree: () => {
+    return JSON.stringify(categoryStore.tree, null, 2)
+  },
+  appendToContent: (text: string) => {
+    const content = vditor?.getValue() || ''
+    vditor?.setValue(content + '\n' + text)
+    dirty.value = true
+    startSaveTimer()
+  },
+  replaceAll: (oldText: string, newText: string) => {
+    const content = vditor?.getValue() || ''
+    if (!content.includes(oldText)) return `未找到"${oldText}"`
+    vditor?.setValue(content.split(oldText).join(newText))
+    dirty.value = true
+    startSaveTimer()
+    return `已将全部"${oldText}"替换为"${newText}"`
+  },
+  replaceOnce: (oldText: string, newText: string) => {
+    const content = vditor?.getValue() || ''
+    const count = content.split(oldText).length - 1
+    if (count === 0) return `错误：未找到"${oldText}"`
+    if (count > 1) return `错误：找到 ${count} 处"${oldText}"，需要恰好 1 处。请改用 replaceAll`
+    vditor?.setValue(content.replace(oldText, newText))
+    dirty.value = true
+    startSaveTimer()
+    return `已将"${oldText}"替换为"${newText}"`
+  }
 }))
 
 function startSaveTimer() {
