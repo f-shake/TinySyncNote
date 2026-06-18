@@ -109,7 +109,16 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IConflictService, ConflictService>();
 builder.Services.AddScoped<ISnapshotService, SnapshotService>();
-builder.Services.AddScoped<IImportExportService, ImportExportService>();
+builder.Services.AddScoped<IImportExportService>(sp =>
+{
+    var db = sp.GetRequiredService<AppDbContext>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    var path = config.GetSection("AttachmentStorage")["Path"] ?? "App_Data/attachments";
+    if (!Path.IsPathRooted(path))
+        path = Path.Combine(env.ContentRootPath, path);
+    return new ImportExportService(db, path);
+});
 builder.Services.AddScoped<IShareService, ShareService>();
 builder.Services.AddScoped<IPublicShareService, PublicShareService>();
 builder.Services.AddScoped<IUserService, UserService>();
@@ -168,6 +177,12 @@ if (!app.Environment.IsDevelopment())
     app.MapFallbackToFile("index.html");
 }
 
+// ────────────── 确保附件存储目录存在 ──────────────
+var storagePath = app.Configuration.GetSection("AttachmentStorage")["Path"] ?? "App_Data/attachments";
+if (!Path.IsPathRooted(storagePath))
+    storagePath = Path.Combine(app.Environment.ContentRootPath, storagePath);
+Directory.CreateDirectory(storagePath);
+
 // ────────────── 自动迁移数据库 ──────────────
 using (var scope = app.Services.CreateScope())
 {
@@ -190,7 +205,7 @@ using (var scope = app.Services.CreateScope())
     catch { }
     db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteShares (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NOT NULL, OwnerUserId TEXT NOT NULL, SharedWithUserId TEXT NOT NULL, SharedNoteCopyId TEXT NOT NULL, SharedAt TEXT NOT NULL)");
     db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS PublicShares (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NOT NULL, CreatedByUserId TEXT NOT NULL, Token TEXT NOT NULL, CreatedAt TEXT NOT NULL, ExpiresAt TEXT NULL, IsActive INTEGER NOT NULL DEFAULT 1)");
-    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteAttachments (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NULL, FileName TEXT NOT NULL, ContentType TEXT NOT NULL, Data BLOB NOT NULL, FileSize INTEGER NOT NULL, CreatedAt TEXT NOT NULL)");
+    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteAttachments (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NULL, FileName TEXT NOT NULL, ContentType TEXT NOT NULL, FileSize INTEGER NOT NULL, CreatedAt TEXT NOT NULL)");
     db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_NoteAttachments_NoteId ON NoteAttachments(NoteId)");
     // 索引（SQLite 忽略重复创建）
     db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_NoteShares_NoteId_SharedWithUserId ON NoteShares(NoteId, SharedWithUserId)");

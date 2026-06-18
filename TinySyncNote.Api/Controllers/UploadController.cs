@@ -12,12 +12,19 @@ public class UploadController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly long _maxFileSize;
+    private readonly string _storagePath;
 
-    public UploadController(AppDbContext db, IConfiguration configuration)
+    public UploadController(AppDbContext db, IConfiguration configuration, IWebHostEnvironment env)
     {
         _db = db;
+
         var mb = configuration.GetValue<int>("Upload:MaxFileSizeMB", 100);
         _maxFileSize = mb * 1024L * 1024L;
+
+        var path = configuration.GetSection("AttachmentStorage")["Path"] ?? "App_Data/attachments";
+        if (!Path.IsPathRooted(path))
+            path = Path.Combine(env.ContentRootPath, path);
+        _storagePath = path;
     }
 
     [HttpPost("image")]
@@ -35,21 +42,22 @@ public class UploadController : ControllerBase
                 return BadRequest(new { msg = $"文件大小超过限制（{_maxFileSize / (1024 * 1024)}MB）" });
 
             var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg" };
-            if (!allowed.Contains(ext))
-                return BadRequest(new { msg = "不支持的图片格式" });
 
             await using var ms = new MemoryStream();
             await file.CopyToAsync(ms);
+            var data = ms.ToArray();
 
             var attachment = new NoteAttachment
             {
                 NoteId = noteId,
                 FileName = file.FileName,
                 ContentType = file.ContentType ?? "application/octet-stream",
-                Data = ms.ToArray(),
                 FileSize = file.Length
             };
+
+            // 写入磁盘：{storagePath}/{id}{ext}
+            var filePath = Path.Combine(_storagePath, $"{attachment.Id}{ext}");
+            await System.IO.File.WriteAllBytesAsync(filePath, data);
 
             _db.NoteAttachments.Add(attachment);
             await _db.SaveChangesAsync();

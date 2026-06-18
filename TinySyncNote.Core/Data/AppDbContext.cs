@@ -141,7 +141,6 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
             entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.Data).IsRequired();
             entity.HasOne(e => e.Note)
                   .WithMany()
                   .HasForeignKey(e => e.NoteId)

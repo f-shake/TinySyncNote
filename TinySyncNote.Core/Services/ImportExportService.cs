@@ -24,6 +24,7 @@ public interface IImportExportService
 public class ImportExportService : IImportExportService
 {
     private readonly AppDbContext _db;
+    private readonly string _storagePath;
 
     /// <summary>匹配笔记内容中的 /api/attachment/{guid} 引用</summary>
     private static readonly Regex AttachmentUrlRx = new(
@@ -35,7 +36,12 @@ public class ImportExportService : IImportExportService
         @"([^""'\s\)\(]+\.assets/[^""'\s\)]+)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public ImportExportService(AppDbContext db) => _db = db;
+    public ImportExportService(AppDbContext db, string storagePath)
+    {
+        _db = db;
+        _storagePath = storagePath;
+        Directory.CreateDirectory(_storagePath);
+    }
 
     // ── 单篇笔记 → Markdown（无 YAML 头部） ──
     public async Task<ExportNoteResult> ExportNoteAsync(Guid noteId, Guid userId)
@@ -84,7 +90,7 @@ public class ImportExportService : IImportExportService
         {
             if (!Guid.TryParse(m.Groups[1].Value, out var guid)) return m.Value;
             if (!attachmentMap.TryGetValue(guid, out var att)) return m.Value;
-            var b64 = Convert.ToBase64String(att.Data);
+            var b64 = Convert.ToBase64String(ReadAttachmentData(att));
             return $"data:{att.ContentType};base64,{b64}";
         });
 
@@ -146,7 +152,7 @@ public class ImportExportService : IImportExportService
 
                 var assetEntry = archive.CreateEntry($"{assetDir}/{guid}{ext}");
                 using var assetStream = assetEntry.Open();
-                assetStream.Write(att.Data);
+                assetStream.Write(ReadAttachmentData(att));
             }
         }
 
@@ -181,7 +187,7 @@ public class ImportExportService : IImportExportService
         {
             if (!Guid.TryParse(m.Groups[1].Value, out var guid)) return m.Value;
             if (!attachmentMap.TryGetValue(guid, out var att)) return m.Value;
-            var b64 = Convert.ToBase64String(att.Data);
+            var b64 = Convert.ToBase64String(ReadAttachmentData(att));
             return $"data:{att.ContentType};base64,{b64}";
         });
 
@@ -298,7 +304,7 @@ public class ImportExportService : IImportExportService
 
                 var assetEntry = archive.CreateEntry($"{assetDir}/{guid}{ext}");
                 using var assetStream = assetEntry.Open();
-                assetStream.Write(att.Data);
+                assetStream.Write(ReadAttachmentData(att));
             }
         }
 
@@ -436,7 +442,7 @@ public class ImportExportService : IImportExportService
 
                         var assetEntry = archive.CreateEntry(assetPath);
                         using var assetStream = assetEntry.Open();
-                        assetStream.Write(att.Data);
+                        assetStream.Write(ReadAttachmentData(att));
                     }
                 }
             }
@@ -545,10 +551,14 @@ public class ImportExportService : IImportExportService
                     {
                         FileName = fullRef,
                         ContentType = contentType,
-                        Data = data,
                         FileSize = data.Length
                     };
                     _db.NoteAttachments.Add(attachment);
+
+                    // 写入磁盘
+                    var destPath = Path.Combine(_storagePath, $"{attachment.Id}{Path.GetExtension(fullRef)}");
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                    File.WriteAllBytes(destPath, data);
 
                     var newUrl = $"/api/attachment/{attachment.Id}";
                     importedAssets[fullRef] = newUrl;
@@ -600,6 +610,21 @@ public class ImportExportService : IImportExportService
         });
         usedGuids = used;
         return result;
+    }
+
+    /// <summary>获取附件在磁盘上的完整路径</summary>
+    private string GetAttachmentPath(NoteAttachment att)
+    {
+        var ext = Path.GetExtension(att.FileName);
+        if (string.IsNullOrEmpty(ext)) ext = ".bin";
+        return Path.Combine(_storagePath, $"{att.Id}{ext}");
+    }
+
+    /// <summary>从磁盘读取附件二进制数据</summary>
+    private byte[] ReadAttachmentData(NoteAttachment att)
+    {
+        var path = GetAttachmentPath(att);
+        return File.ReadAllBytes(path);
     }
 
     /// <summary>根据扩展名获取 Content-Type</summary>
