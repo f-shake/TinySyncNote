@@ -239,12 +239,46 @@ function initEditor(content: string) {
     ],
     upload: {
       url: '/api/upload/image',
-      accept: 'image/*',
+      accept: '*/*',
       multiple: true,
       fieldName: 'file',
-      linkToImgUrl: '',
       extraData: { noteId: noteId.value },
-      setHeaders: () => ({ 'Authorization': `Bearer ${localStorage.getItem('tsn_access_token')}` })
+      // 自定义上传处理器：图片嵌入显示，非图片文件插入下载链接
+      handler: async (files: File[]) => {
+        const token = localStorage.getItem('tsn_access_token')
+        for (const file of files) {
+          const formData = new FormData()
+          formData.append('file', file)
+          if (noteId.value) formData.append('noteId', noteId.value)
+
+          try {
+            const resp = await fetch('/api/upload/image', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+              body: formData,
+            })
+            if (!resp.ok) {
+              ElMessage.error(`上传失败: ${file.name}`)
+              continue
+            }
+            const json = await resp.json()
+            if (json.code !== 0) {
+              ElMessage.error(`上传失败: ${file.name}`)
+              continue
+            }
+            const url = (Object.values(json.data.succMap)[0] ?? '') as string
+            if (!url) continue
+
+            if (file.type.startsWith('image/')) {
+              vditor?.insertValue(`![${file.name}](${url})`)
+            } else {
+              vditor?.insertValue(`[${file.name}](${url})`)
+            }
+          } catch {
+            ElMessage.error(`上传失败: ${file.name}`)
+          }
+        }
+      }
     },
     input: () => {
       dirty.value = true

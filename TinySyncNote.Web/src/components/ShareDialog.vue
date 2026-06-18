@@ -140,15 +140,15 @@ function downloadBlob(blob: Blob, filename: string) {
       <!-- Tab 1: 导出 Markdown -->
       <el-tab-pane label="导出 Markdown" name="markdown">
         <div class="share-tab-body">
-          <p class="share-tab-desc">导出 Markdown 文件，可选择图片处理方式</p>
+          <p class="share-tab-desc">导出 Markdown 文件，可选择图片和附件处理方式</p>
           <div class="assets-options">
             <el-radio-group v-model="mdAssets">
-              <el-radio value="none">不包含图片</el-radio>
+              <el-radio value="none">不包含附件</el-radio>
               <el-radio value="embed">Base64内嵌</el-radio>
               <el-radio value="external">作为附件</el-radio>
             </el-radio-group>
           </div>
-          <p class="share-tab-hint">{{ mdAssets === 'embed' ? '图片以 base64 编码嵌入 Markdown，文件较大但单文件即可使用。' : mdAssets === 'external' ? '导出为 ZIP，图片放在笔记同级的 .assets/ 文件夹中。' : '仅导出文本，不含图片。' }}</p>
+          <p class="share-tab-hint">{{ mdAssets === 'embed' ? '图片和附件以 base64 编码嵌入 Markdown，体积较大但单文件即可使用。' : mdAssets === 'external' ? '导出为 ZIP，附件放在笔记同级的 .assets/ 文件夹中。' : '仅导出纯文本，不含图片和附件。' }}</p>
           <el-button type="primary" :icon="Download" :loading="exporting" @click="handleExportMarkdown">
             {{ mdAssets === 'external' ? '下载 .zip 文件' : '下载 .md 文件' }}
           </el-button>
