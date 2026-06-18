@@ -247,23 +247,19 @@ function initEditor(content: string) {
       extraData: { noteId: noteId.value },
       // 自定义上传处理器：图片嵌入显示，非图片文件插入下载链接
       handler: async (files: File[]): Promise<null> => {
-        const token = localStorage.getItem('tsn_access_token')
         for (const file of files) {
+          if (!file.name) {
+            ElMessage.error(`上传失败: 剪贴板内容不支持`)
+            continue
+          }
           const formData = new FormData()
           formData.append('file', file)
           if (noteId.value) formData.append('noteId', noteId.value)
 
           try {
-            const resp = await fetch(`${apiBase}/api/upload/image`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}` },
-              body: formData,
-            })
-            if (!resp.ok) {
-              ElMessage.error(`上传失败: ${file.name}`)
-              continue
-            }
-            const json = await resp.json()
+            // 使用 http（axios 实例），自动处理 token 刷新与重试
+            const resp = await http.post('/api/upload/image', formData)
+            const json = resp.data
             if (json.code !== 0) {
               ElMessage.error(`上传失败: ${file.name}`)
               continue
