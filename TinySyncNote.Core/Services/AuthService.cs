@@ -35,7 +35,7 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
     {
-        if (_configuration["Registration:Enabled"] != "true")
+        if (!string.Equals(_configuration["Registration:Enabled"], "true", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("注册功能已关闭");
 
         if (await _db.Users.AnyAsync(u => u.Username == request.Username))

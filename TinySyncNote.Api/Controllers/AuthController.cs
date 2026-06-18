@@ -58,7 +58,7 @@ public class AuthController : ControllerBase
     [HttpGet("registration-status")]
     public ActionResult<object> GetRegistrationStatus()
     {
-        var enabled = _configuration["Registration:Enabled"] == "true";
+        var enabled = string.Equals(_configuration["Registration:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
         return Ok(new { enabled });
     }
 
