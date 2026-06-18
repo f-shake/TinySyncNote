@@ -247,29 +247,21 @@ function initEditor(content: string) {
       extraData: { noteId: noteId.value },
       // 自定义上传处理器：图片嵌入显示，非图片文件插入下载链接
       handler: async (files: File[]): Promise<null> => {
-        const token = localStorage.getItem('tsn_access_token')
+        // token 由 http 拦截器自动处理
         for (const file of files) {
           const formData = new FormData()
           formData.append('file', file)
           if (noteId.value) formData.append('noteId', noteId.value)
 
           try {
-            const resp = await fetch(`${apiBase}/api/upload/image`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}` },
-              body: formData,
-            })
-            if (!resp.ok) {
-              ElMessage.error(`上传失败: ${file.name}`)
-              continue
-            }
-            const json = await resp.json()
+            const resp = await http.post('/api/upload/image', formData)
+            const json = resp.data
             if (json.code !== 0) {
               ElMessage.error(`上传失败: ${file.name}`)
               continue
             }
             let url = (Object.values(json.data.succMap)[0] ?? '') as string
-            if (apiBase && url.startsWith('/')) url = apiBase + url
+            if (http.defaults.baseURL && url.startsWith('/')) url = http.defaults.baseURL + url
             if (!url) continue
 
             if (file.type.startsWith('image/')) {
@@ -470,7 +462,6 @@ function goBack() {
   else router.push('/notebooks')
 }
 
-const apiBase = http.defaults.baseURL || ''
 const editorActions = computed(() => ({
   getNoteContent: () => vditor?.getValue() || '',
   replaceNoteContent: (content: string) => {
