@@ -48,4 +48,17 @@ html, body, #app {
   gap: 16px;
   color: #909399;
 }
+
+/* 浅色模式：提高对比度，加深边框和文字 */
+:root {
+  --el-border-color: #c0c4cc;
+  --el-border-color-light: #d0d5dd;
+  --el-border-color-lighter: #d8dce3;
+  --el-border-color-extra-light: #e4e8ee;
+  --el-text-color-primary: #1f1f1f;
+  --el-text-color-regular: #3f4042;
+  --el-text-color-secondary: #6b6f76;
+  --el-text-color-placeholder: #8f9399;
+  --el-text-color-disabled: #afb3b9;
+}
 </style>

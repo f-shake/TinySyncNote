@@ -244,7 +244,7 @@ function initEditor(content: string) {
       fieldName: 'file',
       extraData: { noteId: noteId.value },
       // 自定义上传处理器：图片嵌入显示，非图片文件插入下载链接
-      handler: async (files: File[]) => {
+      handler: async (files: File[]): Promise<null> => {
         const token = localStorage.getItem('tsn_access_token')
         for (const file of files) {
           const formData = new FormData()
@@ -278,6 +278,7 @@ function initEditor(content: string) {
             ElMessage.error(`上传失败: ${file.name}`)
           }
         }
+        return null
       }
     },
     input: () => {
@@ -528,15 +529,17 @@ function onTitleChange() {
           </el-tag>
         </el-tooltip>
 
-        <el-tag
-          :type="saving ? 'info' : dirty ? 'warning' : 'success'"
-          size="small"
-          effect="plain"
-          :style="{ cursor: dirty && !saving ? 'pointer' : 'default' }"
-          @click="handleSaveTagClick"
-        >
-          {{ saving ? '保存中' : dirty ? '未保存' : '已保存' }}
-        </el-tag>
+        <el-tooltip content="保存状态" placement="bottom">
+          <el-tag
+            :type="saving ? 'info' : dirty ? 'warning' : 'success'"
+            size="small"
+            effect="plain"
+            :style="{ cursor: dirty && !saving ? 'pointer' : 'default' }"
+            @click="handleSaveTagClick"
+          >
+            {{ saving ? '保存中' : dirty ? '未保存' : '已保存' }}
+          </el-tag>
+        </el-tooltip>
 
         <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
         <el-button text :icon="Share" @click="openShareDialog">分享</el-button>

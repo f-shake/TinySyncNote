@@ -183,36 +183,11 @@ if (!Path.IsPathRooted(storagePath))
     storagePath = Path.Combine(app.Environment.ContentRootPath, storagePath);
 Directory.CreateDirectory(storagePath);
 
-// ────────────── 自动迁移数据库 ──────────────
+// ────────────── 初始化数据库 ──────────────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-    // 兼容已有数据库：新增列和表
-    try
-    {
-        var cols = new System.Collections.Generic.HashSet<string>();
-        using (var cmd = db.Database.GetDbConnection().CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA table_info(Notebooks)";
-            db.Database.OpenConnection();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read()) cols.Add(reader.GetString(1));
-        }
-        if (!cols.Contains("IsSystem"))
-            db.Database.ExecuteSqlRaw("ALTER TABLE Notebooks ADD COLUMN IsSystem INTEGER NOT NULL DEFAULT 0");
-    }
-    catch { }
-    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteShares (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NOT NULL, OwnerUserId TEXT NOT NULL, SharedWithUserId TEXT NOT NULL, SharedNoteCopyId TEXT NOT NULL, SharedAt TEXT NOT NULL)");
-    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS PublicShares (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NOT NULL, CreatedByUserId TEXT NOT NULL, Token TEXT NOT NULL, CreatedAt TEXT NOT NULL, ExpiresAt TEXT NULL, IsActive INTEGER NOT NULL DEFAULT 1)");
-    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS NoteAttachments (Id TEXT NOT NULL PRIMARY KEY, NoteId TEXT NULL, FileName TEXT NOT NULL, ContentType TEXT NOT NULL, FileSize INTEGER NOT NULL, CreatedAt TEXT NOT NULL)");
-    db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_NoteAttachments_NoteId ON NoteAttachments(NoteId)");
-    // 索引（SQLite 忽略重复创建）
-    db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_NoteShares_NoteId_SharedWithUserId ON NoteShares(NoteId, SharedWithUserId)");
-    db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_PublicShares_Token ON PublicShares(Token)");
-    db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Notebooks_UserId_IsSystem ON Notebooks(UserId, IsSystem)");
-    db.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS UserSettings (Id TEXT NOT NULL PRIMARY KEY, UserId TEXT NOT NULL, Key TEXT NOT NULL, Value TEXT NOT NULL)");
-    db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_UserSettings_UserId_Key ON UserSettings(UserId, Key)");
 
 #if DEBUG
     // 开发模式：默认用户 dev / dev
