@@ -5,9 +5,9 @@ import router from '../router'
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 30000,
-  // 不设 Content-Type 默认值，让 axios 根据请求数据自动判断：
-  //   - JSON 请求：自动使用 application/json
-  //   - FormData 请求：浏览器自动设置 multipart/form-data; boundary=...
+  headers: {
+    'Content-Type': 'application/json'
+  }
 })
 
 // 存储 Token 的 key
