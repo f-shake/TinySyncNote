@@ -85,7 +85,7 @@ export function useTableEnhancer(
     if (!sel || sel.rangeCount === 0) return 0
     const range = sel.getRangeAt(0)
 
-    const allCells = Array.from(table.querySelectorAll('td, th'))
+    const allCells = Array.from(table.querySelectorAll<HTMLTableCellElement>('td, th'))
     if (allCells.length === 0) return 0
 
     // 收集选区覆盖到的单元格
@@ -94,7 +94,7 @@ export function useTableEnhancer(
     for (const cell of allCells) {
       if (range.intersectsNode(cell)) {
         touched.add(cell)
-        touchedRows.add(cell.closest('tr')!)
+        touchedRows.add(cell.closest('tr') as HTMLTableRowElement)
       }
     }
 
@@ -224,7 +224,7 @@ export function useTableEnhancer(
     const target = e.target as Node
     const cell = target instanceof HTMLTableCellElement
       ? target
-      : target.parentElement?.closest('td, th') ?? null
+      : (target.parentElement?.closest('td, th') as HTMLTableCellElement | null) ?? null
     if (!cell) return
 
     e.preventDefault()

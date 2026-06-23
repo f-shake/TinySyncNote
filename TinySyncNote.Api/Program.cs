@@ -27,16 +27,25 @@ builder.WebHost.ConfigureKestrel(options =>
 var dbProvider = builder.Configuration.GetValue<string>("DatabaseProvider") ?? "Sqlite";
 if (dbProvider == "Sqlite")
 {
-    var sqlitePath = builder.Configuration.GetConnectionString("Sqlite")
+    var sqliteConn = builder.Configuration.GetConnectionString("Sqlite")
         ?? "Data Source=TinySyncNote.db";
+    // 确保数据库文件位于 exe 所在目录，避免因工作目录变更导致数据"丢失"
+    if (!sqliteConn.Contains(':')) // 相对路径 → 转为 exe 目录下的绝对路径
+    {
+        var dbDir = Path.Combine(AppContext.BaseDirectory, "App_Data");
+        Directory.CreateDirectory(dbDir);
+        var dbFile = Path.Combine(dbDir, "TinySyncNote.db");
+        sqliteConn = $"Data Source={dbFile}";
+    }
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlite(sqlitePath));
+        options.UseSqlite(sqliteConn, b => b.MigrationsAssembly("TinySyncNote.Api")));
 }
 #if ENABLE_PGSQL
 else if (dbProvider == "Postgresql")
 {
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(builder.Configuration.GetConnectionString("Postgresql")));
+        options.UseNpgsql(builder.Configuration.GetConnectionString("Postgresql"),
+            b => b.MigrationsAssembly("TinySyncNote.Api")));
 }
 #endif
 #if ENABLE_MYSQL
@@ -45,7 +54,8 @@ else if (dbProvider == "Mysql")
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseMySql(
             builder.Configuration.GetConnectionString("Mysql"),
-            ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("Mysql"))));
+            ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("Mysql")),
+            b => b.MigrationsAssembly("TinySyncNote.Api")));
 }
 #endif
 
@@ -183,11 +193,42 @@ if (!Path.IsPathRooted(storagePath))
     storagePath = Path.Combine(app.Environment.ContentRootPath, storagePath);
 Directory.CreateDirectory(storagePath);
 
-// ────────────── 初始化数据库 ──────────────
+// ────────────── 初始化数据库（迁移） ──────────────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+
+    if (db.Database.CanConnect())
+    {
+        // 检查是否由旧版 EnsureCreated 创建的数据库（无 __EFMigrationsHistory 表）
+        var hasHistory = false;
+        try
+        {
+            db.Database.ExecuteSqlRaw("SELECT 1 FROM \"__EFMigrationsHistory\"");
+            hasHistory = true;
+        }
+        catch
+        {
+            // 表不存在，说明是旧版创建的数据库
+        }
+
+        if (!hasHistory)
+        {
+            // 创建迁移历史表，标记初始迁移为已应用，避免重复建表
+            db.Database.ExecuteSqlRaw(
+                "CREATE TABLE \"__EFMigrationsHistory\" (\"MigrationId\" TEXT NOT NULL PRIMARY KEY, \"ProductVersion\" TEXT NOT NULL)");
+            var firstMigration = db.Database.GetMigrations().FirstOrDefault();
+            if (firstMigration != null)
+            {
+                db.Database.ExecuteSqlRaw(
+                    "INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ({0}, '10.0.9')",
+                    firstMigration);
+            }
+        }
+    }
+
+    // 应用待处理迁移（首次运行创建数据库，后续只做增量变更）
+    db.Database.Migrate();
 
 #if DEBUG
     // 开发模式：默认用户 dev / dev

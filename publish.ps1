@@ -12,7 +12,7 @@ Write-Host "=== TinySyncNote 构建发布 ===" -ForegroundColor Cyan
 
 # 1. 构建前端
 Write-Host "[1/4] 构建前端..." -ForegroundColor Yellow
-Set-Location $webDir
+Push-Location $webDir
 npm install --silent
 $env:VITE_API_BASE_URL = "/note"
 $env:VITE_BASE = "/note"
@@ -29,13 +29,15 @@ Copy-Item -Recurse (Join-Path $webDir "dist\*") -Destination $wwwrootDir
 # 3. 发布后端
 Write-Host "[3/4] 发布后端..." -ForegroundColor Yellow
 if (Test-Path $publishDir) { Remove-Item -Recurse -Force $publishDir }
-Set-Location $apiDir
+Push-Location $apiDir
 dotnet publish -c Release -o $publishDir --nologo /p:PublishSingleFile=true --self-contained false
 if ($LASTEXITCODE -ne 0) { throw "后端发布失败" }
+Pop-Location
 
 # 4. 清理前端临时文件
 Write-Host "[4/4] 清理 wwwroot..." -ForegroundColor Yellow
 Remove-Item -Recurse -Force $wwwrootDir
+Pop-Location
 
 Write-Host "=== 发布完成 ===" -ForegroundColor Green
 Write-Host "输出目录: $publishDir" -ForegroundColor Cyan
