@@ -39,6 +39,41 @@ const previewSnapshot = ref<NoteSnapshot | null>(null)
 const dirty = ref(false)   // 是否有未保存修改
 const lastSelectedText = ref('') // 追踪编辑器选中文本，供 AI 使用
 
+// ── 插入表格对话框 ──
+const showTableDialog = ref(false)
+const tableRows = ref(3)
+const tableCols = ref(3)
+let _insertingTable = false
+
+function insertTable() {
+  if (_insertingTable) return
+  _insertingTable = true
+
+  try {
+    const totalRows = tableRows.value
+    const cols = tableCols.value
+    if (totalRows < 2 || cols < 1) return
+
+    // 分屏模式分隔线不计行，IR/WYSIWYG 分隔线占视觉一行
+    const mode = vditor?.getCurrentMode?.() || 'ir'
+    const bodyRows = mode === 'sv' ? totalRows - 1 : totalRows - 2
+
+    const emptyCell = ' '
+    const md = [
+      '|' + Array.from({ length: cols }, () => ` ${emptyCell} `).join('|') + '|',
+      '|' + Array.from({ length: cols }, () => ' --- ').join('|') + '|',
+      ...Array.from({ length: bodyRows },
+        () => '|' + Array.from({ length: cols }, () => ` ${emptyCell} `).join('|') + '|'
+      ),
+    ].join('\n') + '\n'
+
+    vditor?.insertValue(md)
+    showTableDialog.value = false
+  } finally {
+    setTimeout(() => { _insertingTable = false }, 300)
+  }
+}
+
 // ── AI 面板拖拽调整宽度 ──
 const AI_PANEL_WIDTH_KEY = 'tsn_ai_panel_width'
 const aiPanelWidth = ref(parseInt(localStorage.getItem(AI_PANEL_WIDTH_KEY) || '360', 10))
@@ -238,7 +273,28 @@ function initEditor(content: string) {
       'headings', 'bold', 'italic', 'strike', '|',
       'list', 'ordered-list', 'check', '|',
       'code', 'inline-code', '|',
-      'table', 'link', 'quote', '|',
+      {
+        name: 'custom-table',
+        tip: '插入表格',
+        icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 3h18v18H3V3zm2 2v4h14V5H5zm0 6v4h6v-4H5zm8 0v4h6v-4h-6zm-8 6v2h6v-2H5zm8 0v2h6v-2h-6z"/></svg>',
+        click: () => {
+          // 焦点在已有表格内时禁止创建，防止破坏表格结构
+          const sel = window.getSelection()
+          if (sel?.focusNode) {
+            const cell = sel.focusNode instanceof HTMLTableCellElement
+              ? sel.focusNode
+              : sel.focusNode.parentElement?.closest('td, th')
+            if (cell) {
+              ElMessage.warning('请先将光标移出表格再创建新表格')
+              return
+            }
+          }
+          tableRows.value = 3
+          tableCols.value = 3
+          showTableDialog.value = true
+        }
+      },
+      'link', 'quote', '|',
       'edit-mode', 'fullscreen', 'outline', '|',
       'undo', 'redo'
     ],
@@ -629,6 +685,28 @@ function onTitleChange() {
       />
     </div>
   </div>
+
+  <!-- ═══ 插入表格对话框 ═══ -->
+  <el-dialog
+    v-model="showTableDialog"
+    title="插入表格"
+    width="360px"
+    :close-on-click-modal="false"
+    @keyup.enter.self="insertTable"
+  >
+    <el-form label-width="80px" style="padding: 8px 0;">
+      <el-form-item label="行数">
+        <el-input-number v-model="tableRows" :min="2" :max="50" style="width: 100%;" />
+      </el-form-item>
+      <el-form-item label="列数">
+        <el-input-number v-model="tableCols" :min="1" :max="30" style="width: 100%;" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="showTableDialog = false">取消</el-button>
+      <el-button type="primary" @click="insertTable">插入</el-button>
+    </template>
+  </el-dialog>
 
   <!-- ═══ 分享对话框 ═══ -->
   <ShareDialog

@@ -85,6 +85,9 @@ export function useTableEnhancer(
     if (!sel || sel.rangeCount === 0) return 0
     const range = sel.getRangeAt(0)
 
+    // 折叠选区（只有光标，没有选中内容）→ 无选区
+    if (range.collapsed) return 0
+
     const allCells = Array.from(table.querySelectorAll<HTMLTableCellElement>('td, th'))
     if (allCells.length === 0) return 0
 
@@ -184,6 +187,7 @@ export function useTableEnhancer(
     { divider: true },
     { label: '删除行', action: 'deleteRow' },
     { label: '删除列', action: 'deleteCol' },
+    { label: '删除表格', action: 'deleteTable' },
   ] as const
 
   function createMenu() {
@@ -340,6 +344,10 @@ export function useTableEnhancer(
         }
         break
       }
+      case 'deleteTable': {
+        table.parentNode?.removeChild(table)
+        break
+      }
       case 'alignLeft':
       case 'alignCenter':
       case 'alignRight': {
@@ -402,14 +410,9 @@ export function useTableEnhancer(
         let targetRange: Range
 
         if (level === 2) {
-          // 已选中整行 → 选中整个表格（边界落在单元格内，保证焦点在表格中）
-          const allCells = table.querySelectorAll('td, th')
+          // 已选中整行 → 选中整个表格（selectNode 包含 <table> 标签，复制保留结构）
           targetRange = document.createRange()
-          targetRange.setStart(allCells[0], 0)
-          targetRange.setEnd(
-            allCells[allCells.length - 1],
-            allCells[allCells.length - 1].childNodes.length
-          )
+          targetRange.selectNode(table)
         } else if (level === 1) {
           // 已选中单元格 → 选中整行
           const row = cell.closest('tr')!
@@ -443,6 +446,70 @@ export function useTableEnhancer(
     }
   }
 
+  /** 复制拦截：当选区在表格内时，构造只含选中单元格的 <table> HTML */
+  function onCopy(e: ClipboardEvent) {
+    // 只拦截编辑器内的复制
+    if (!containerRef.value?.contains(e.target as Node)) return
+    const fragment = buildTableFromSelection()
+    if (!fragment) return
+    e.preventDefault()
+    e.stopPropagation()
+    const html = fragment.outerHTML
+    e.clipboardData?.setData('text/html', html)
+    e.clipboardData?.setData('text/plain', fragment.textContent || '')
+  }
+
+  /** 根据当前选区，构造包含所选单元格的 <table> 元素（完整选区返回原表，部分选区只取选中的行列） */
+  function buildTableFromSelection(): HTMLTableElement | null {
+    const sel = window.getSelection()
+    if (!sel || !sel.rangeCount) return null
+    const range = sel.getRangeAt(0)
+
+    // 找到选区所在的表格
+    let node: Node | null = range.commonAncestorContainer
+    let table = node instanceof HTMLTableElement ? node
+              : node?.parentElement?.closest('table') ?? null
+    if (!table) return null
+
+    const allRows = Array.from(table.querySelectorAll('tr'))
+    const allCells = Array.from(table.querySelectorAll<HTMLTableCellElement>('td, th'))
+
+    // 找出被选区覆盖的单元格
+    const touched = new Set<HTMLTableCellElement>()
+    for (const cell of allCells) {
+      if (range.intersectsNode(cell)) touched.add(cell)
+    }
+    if (touched.size === 0) return null
+
+    // 全选 → 直接返回原表
+    if (touched.size >= allCells.length) return table.cloneNode(true) as HTMLTableElement
+
+    // 部分选中 → 构造新表
+    const out = document.createElement('table')
+    const outTbody = document.createElement('tbody')
+    out.appendChild(outTbody)
+
+    for (const row of allRows) {
+      const rowCells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td, th'))
+      const kept = rowCells.filter(c => touched.has(c))
+      if (kept.length === 0) continue // 该行无选中单元格
+      const outTr = document.createElement('tr')
+      for (const cell of kept) {
+        const tag = cell.tagName === 'TH' ? 'th' : 'td'
+        const newCell = document.createElement(tag)
+        newCell.innerHTML = cell.innerHTML
+        // 复制文本对齐样式
+        if (cell.matches('[style*="text-align"]')) {
+          newCell.style.textAlign = cell.style.textAlign
+        }
+        outTr.appendChild(newCell)
+      }
+      outTbody.appendChild(outTr)
+    }
+
+    return out
+  }
+
   // ── 公开 API ──
 
   function setup() {
@@ -450,12 +517,15 @@ export function useTableEnhancer(
     document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('mousedown', onMouseDown)
+    // copy 不冒泡，用 capture 确保在 Vditor 之前拿到事件
+    document.addEventListener('copy', onCopy, true)
   }
 
   function cleanup() {
     document.removeEventListener('keydown', onKeyDown, true)
     document.removeEventListener('contextmenu', onContextMenu)
     document.removeEventListener('mousedown', onMouseDown)
+    document.removeEventListener('copy', onCopy, true)
     hideMenu()
     menuEl?.remove()
     menuEl = null
