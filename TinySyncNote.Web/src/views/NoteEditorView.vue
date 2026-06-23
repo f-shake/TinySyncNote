@@ -521,7 +521,7 @@ function openAIChat() {
 
 // ── 移动端返回 ──
 function goBack() {
-  const nb = route.query.nb as string
+  const nb = noteStore.currentNotebookId
   if (nb) router.push(`/notebook/${nb}`)
   else router.push('/notebooks')
 }

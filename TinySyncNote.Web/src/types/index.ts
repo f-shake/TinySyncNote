@@ -57,6 +57,8 @@ export interface NoteDetailResponse {
   version: number
   createdAt: string
   updatedAt: string
+  notebookId: string
+  notebookName: string
 }
 
 // 笔记列表项（不含正文）

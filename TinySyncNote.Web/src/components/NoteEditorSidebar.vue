@@ -23,12 +23,10 @@ const noteStore = useNoteStore()
 const treeRef = ref<any>(null)
 const treeBackRef = ref<HTMLDivElement | null>(null)
 
-const notebookId = computed(() => route.query.nb as string)
-
-// 编辑器加载/切换笔记本时获取目录树
-watch(() => route.query.nb, (nb) => {
-  if (nb) {
-    categoryStore.fetchTree(nb as string)
+// 当前笔记加载后自动获取所属笔记本的目录树
+watch(() => noteStore.currentNotebookId, (nbId) => {
+  if (nbId) {
+    categoryStore.fetchTree(nbId)
   }
 }, { immediate: true })
 
@@ -115,7 +113,7 @@ async function handleNodeClick(data: NoteTreeData) {
     noteStore.selectedCategoryId = catId
   } else {
     const noteId = data.id.replace('note:', '')
-    router.push(`/note/${noteId}?nb=${notebookId.value}`)
+    router.push(`/note/${noteId}`)
   }
 }
 
@@ -146,7 +144,7 @@ onUnmounted(() => {
 })
 
 function goBackFromEditor() {
-  const nbId = notebookId.value
+  const nbId = noteStore.currentNotebookId
   if (nbId) router.push(`/notebook/${nbId}`)
   else router.push('/notebooks')
 }
@@ -168,7 +166,7 @@ async function createNoteInCategory(catId: string) {
     if (note) {
       noteStore.selectedCategoryId = catId
       await noteStore.fetchByCategory(catId)
-      router.push(`/note/${note.id}?nb=${notebookId.value}`)
+      router.push(`/note/${note.id}`)
     }
   } catch { /* handled by store */ }
 }
@@ -178,7 +176,7 @@ function openCreateCategory(parentId?: string) {
   ElMessageBox.prompt('请输入目录名称', '新建目录', {
     confirmButtonText: '创建', cancelButtonText: '取消', inputPattern: /\S/, inputErrorMessage: '名称不能为空'
   }).then(async ({ value }) => {
-    const nbId = notebookId.value
+    const nbId = noteStore.currentNotebookId
     if (!nbId) return
     const id = await categoryStore.create(nbId, value, parentId)
     if (id) {
@@ -197,10 +195,10 @@ async function handleDeleteNote(e: Event, noteId: string, noteTitle: string) {
     })
     await noteStore.remove(noteId)
     if (route.params.id === noteId) {
-      const nbId = notebookId.value
+      const nbId = noteStore.currentNotebookId
       const remaining = noteStore.notes
       if (remaining.length > 0) {
-        router.push(`/note/${remaining[0].id}${nbId ? `?nb=${nbId}` : ''}`)
+        router.push(`/note/${remaining[0].id}`)
       } else {
         router.push(nbId ? `/notebook/${nbId}` : '/notebooks')
       }

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useNotebookStore } from '../stores/notebook'
+import { useNoteStore } from '../stores/note'
 import { useRoute, useRouter } from 'vue-router'
 import {
   WarningFilled, Setting, SwitchButton, Moon, Sunny, MoreFilled, Document
@@ -11,6 +12,7 @@ import NoteEditorSidebar from '../components/NoteEditorSidebar.vue'
 
 const authStore = useAuthStore()
 const notebookStore = useNotebookStore()
+const noteStore = useNoteStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -31,14 +33,17 @@ const isEditor = computed(() => route.name === 'NoteEditor')
 onMounted(() => notebookStore.fetchAll())
 
 const notebookId = computed(() => route.params.id as string)
-const editorNotebookId = computed(() => isEditor.value ? (route.query.nb as string) : null)
 
 const currentNotebookName = computed(() => {
-  const id = editorNotebookId.value || notebookId.value
+  // 编辑模式：从当前笔记的 store 中取
+  if (isEditor.value) {
+    return noteStore.currentNotebookName || ''
+  }
+  // 笔记本详情模式：从 URL params 取
+  const id = notebookId.value
   if (!id) return ''
   const nb = notebookStore.notebooks.find(n => n.id === id)
-  if (nb?.name) return nb.name
-  return (route.query.nbn as string) || ''
+  return nb?.name || ''
 })
 
 function handleMoreCommand(cmd: string) {

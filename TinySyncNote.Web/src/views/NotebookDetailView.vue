@@ -67,14 +67,14 @@ async function createNote() {
     }
 
     const note = await noteStore.create(noteStore.selectedCategoryId, title)
-    router.push(`/note/${note.id}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
+    router.push(`/note/${note.id}`)
   } catch {
     // store 已显示错误
   }
 }
 
 function openNote(noteId: string) {
-  router.push(`/note/${noteId}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
+  router.push(`/note/${noteId}`)
 }
 
 async function exportNotebook() {

@@ -10,6 +10,8 @@ export const useNoteStore = defineStore('note', () => {
   const loading = ref(false)
   const selectedCategoryId = ref<string | null>(null)
   const deletingNoteId = ref<string | null>(null)
+  const currentNotebookId = ref<string | null>(null)
+  const currentNotebookName = ref('')
 
   async function fetchByCategory(categoryId: string) {
     loading.value = true
@@ -28,6 +30,8 @@ export const useNoteStore = defineStore('note', () => {
     try {
       const res = await http.get<NoteDetailResponse>(`/api/notes/${id}`)
       currentNote.value = res.data
+      currentNotebookId.value = res.data.notebookId
+      currentNotebookName.value = res.data.notebookName
       return res.data
     } catch (err: any) {
       ElMessage.error(err.response?.data?.message || '获取笔记失败')
@@ -100,5 +104,5 @@ export const useNoteStore = defineStore('note', () => {
     }
   }
 
-  return { notes, currentNote, loading, selectedCategoryId, deletingNoteId, fetchByCategory, fetchById, create, update, remove }
+  return { notes, currentNote, loading, selectedCategoryId, deletingNoteId, currentNotebookId, currentNotebookName, fetchByCategory, fetchById, create, update, remove }
 })

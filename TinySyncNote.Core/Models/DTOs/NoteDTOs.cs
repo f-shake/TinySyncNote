@@ -34,6 +34,8 @@ public class NoteDetailResponse
     public int Version { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public Guid NotebookId { get; set; }
+    public string NotebookName { get; set; } = string.Empty;
 }
 
 /// <summary>笔记列表项（不含正文，用于列表展示）</summary>

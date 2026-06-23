@@ -74,6 +74,10 @@ public class NoteService : INoteService
 
         _db.Notes.Add(note);
         await _db.SaveChangesAsync();
+
+        // 加载导航属性以便 ToDetailResponse 读取 notebookId/notebookName
+        await _db.Entry(note).Reference(n => n.Category).Query().Include(c => c.Notebook).LoadAsync();
+
         return ToDetailResponse(note);
     }
 
@@ -141,6 +145,8 @@ public class NoteService : INoteService
         Content = n.Content,
         Version = n.Version,
         CreatedAt = n.CreatedAt,
-        UpdatedAt = n.UpdatedAt
+        UpdatedAt = n.UpdatedAt,
+        NotebookId = n.Category?.NotebookId ?? Guid.Empty,
+        NotebookName = n.Category?.Notebook?.Name ?? string.Empty
     };
 }
