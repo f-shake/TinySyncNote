@@ -79,6 +79,47 @@ export function useTableEnhancer(
     }
   }
 
+  /** 检测当前选区覆盖情况 0=无选区，1=单元格级（选了一些内容但未占满整行），2=行级（已占满整行），3=表级（已占满全表） */
+  function getTableSelectionLevel(table: HTMLTableElement): number {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return 0
+    const range = sel.getRangeAt(0)
+
+    const allCells = Array.from(table.querySelectorAll('td, th'))
+    if (allCells.length === 0) return 0
+
+    // 收集选区覆盖到的单元格
+    const touched = new Set<HTMLTableCellElement>()
+    const touchedRows = new Set<HTMLTableRowElement>()
+    for (const cell of allCells) {
+      if (range.intersectsNode(cell)) {
+        touched.add(cell)
+        touchedRows.add(cell.closest('tr')!)
+      }
+    }
+
+    // 选区混合：一部分在表格内，一部分在表格外 → 直接全选
+    if (touched.size > 0) {
+      const tableNode: Node = table
+      if (!tableNode.contains(range.startContainer) || !tableNode.contains(range.endContainer)) {
+        return 3
+      }
+    }
+
+    const totalCells = allCells.length
+
+    if (touched.size >= totalCells) return 3          // 覆盖了全部单元格 → 表级
+    if (touchedRows.size > 1) return 2                 // 跨行 → 行级已满，跳到表级
+    if (touchedRows.size === 1 && touched.size > 0) {
+      const row = touchedRows.values().next().value!
+      const rowCells = row.querySelectorAll('td, th')
+      if (touched.size >= rowCells.length) return 2   // 覆盖了整行 → 行级
+      return 1                                         // 单行内部分内容 → 单元格级
+    }
+
+    return 0
+  }
+
   // ── Tab 导航 ──
 
   function handleTabKey(e: KeyboardEvent) {
@@ -137,6 +178,10 @@ export function useTableEnhancer(
     { label: '在左侧插入列', action: 'insertColLeft' },
     { label: '在右侧插入列', action: 'insertColRight' },
     { divider: true },
+    { label: '左对齐', action: 'alignLeft' },
+    { label: '中对齐', action: 'alignCenter' },
+    { label: '右对齐', action: 'alignRight' },
+    { divider: true },
     { label: '删除行', action: 'deleteRow' },
     { label: '删除列', action: 'deleteCol' },
   ] as const
@@ -187,16 +232,17 @@ export function useTableEnhancer(
     createMenu()
     if (!menuEl) return
 
-    // 定位菜单位于鼠标下方
+    // 先显示才能测出真实高度
+    menuEl.style.display = 'block'
+    const menuW = menuEl.offsetWidth
+    const menuH = menuEl.offsetHeight
+
     let x = e.clientX
     let y = e.clientY
-    const menuW = 170
-    const menuH = menuEl.scrollHeight || 250
     if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
     if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
     menuEl.style.left = x + 'px'
     menuEl.style.top = y + 'px'
-    menuEl.style.display = 'block'
   }
 
   function hideMenu() {
@@ -294,6 +340,36 @@ export function useTableEnhancer(
         }
         break
       }
+      case 'alignLeft':
+      case 'alignCenter':
+      case 'alignRight': {
+        const align = action === 'alignLeft' ? 'left'
+                    : action === 'alignCenter' ? 'center'
+                    : 'right'
+
+        // 确定受影响列：如果有选区则应用于所有被选中的列
+        const targetCols = new Set<number>()
+        const sel = window.getSelection()
+        if (sel?.rangeCount) {
+          const range = sel.getRangeAt(0)
+          for (const row of rows) {
+            const rowCells = row.querySelectorAll('td, th')
+            for (let i = 0; i < rowCells.length; i++) {
+              if (range.intersectsNode(rowCells[i])) targetCols.add(i)
+            }
+          }
+        }
+        // 无选区时退回到右键点击的列
+        if (targetCols.size === 0) targetCols.add(colIndex)
+
+        for (const row of rows) {
+          const cells = row.querySelectorAll('td, th')
+          for (const ci of targetCols) {
+            if (cells[ci]) (cells[ci] as HTMLElement).style.textAlign = align
+          }
+        }
+        break
+      }
     }
 
     notifyContentChange()
@@ -307,6 +383,49 @@ export function useTableEnhancer(
     }
     if (e.key === 'Escape') {
       hideMenu()
+    }
+    // Ctrl+A / Cmd+A 递进选择：单元格 → 整行 → 整个表格 → 全选
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      const cell = getFocusedCell()
+      if (cell) {
+        const table = cell.closest('table')!
+        const level = getTableSelectionLevel(table)
+        const sel = window.getSelection()
+        if (!sel) return
+
+        // Level 3+：已经是全表 → 放行给默认行为（全选）
+        if (level >= 3) return
+
+        e.preventDefault()
+        e.stopPropagation()
+
+        let targetRange: Range
+
+        if (level === 2) {
+          // 已选中整行 → 选中整个表格（边界落在单元格内，保证焦点在表格中）
+          const allCells = table.querySelectorAll('td, th')
+          targetRange = document.createRange()
+          targetRange.setStart(allCells[0], 0)
+          targetRange.setEnd(
+            allCells[allCells.length - 1],
+            allCells[allCells.length - 1].childNodes.length
+          )
+        } else if (level === 1) {
+          // 已选中单元格 → 选中整行
+          const row = cell.closest('tr')!
+          const rowCells = row.querySelectorAll('td, th')
+          targetRange = document.createRange()
+          targetRange.setStart(rowCells[0], 0)
+          targetRange.setEnd(rowCells[rowCells.length - 1], rowCells[rowCells.length - 1].childNodes.length)
+        } else {
+          // 未选中/部分选中 → 选中当前单元格内容
+          targetRange = document.createRange()
+          targetRange.selectNodeContents(cell)
+        }
+
+        sel.removeAllRanges()
+        sel.addRange(targetRange)
+      }
     }
   }
 

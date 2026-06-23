@@ -115,7 +115,7 @@ function openNotebook(id: string) {
         </div>
         <div class="card-body">
           <div class="card-title">{{ nb.name }}</div>
-          <div class="card-desc">{{ nb.description || '暂无描述' }}</div>
+          <div v-if="nb.description" class="card-desc">{{ nb.description }}</div>
         </div>
         <div class="card-actions" @click.stop>
           <el-button text :icon="Edit" @click="openRename(nb)" />
@@ -207,7 +207,7 @@ function openNotebook(id: string) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 12px 16px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;
   cursor: pointer;
@@ -233,10 +233,14 @@ function openNotebook(id: string) {
   font-weight: 600;
   font-size: 15px;
   color: var(--el-text-color-primary);
-  margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 有描述时标题下方留间隙 */
+.notebook-card:has(.card-desc) .card-title {
+  margin-bottom: 4px;
 }
 
 .card-desc {
