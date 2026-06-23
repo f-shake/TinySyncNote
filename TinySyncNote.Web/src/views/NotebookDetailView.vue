@@ -38,15 +38,39 @@ watch(notebookId, () => {
   noteStore.notes = []
 })
 
-function createNote() {
+async function createNote() {
   if (!noteStore.selectedCategoryId) {
-    ElMessage.warning('请先在左侧选择一个目录')
-    return
+    // 确保目录树已加载
+    if (categoryStore.tree.length === 0) {
+      await categoryStore.fetchTree(notebookId.value)
+    }
+    // 如果笔记本内没有目录，自动创建"默认目录"
+    if (categoryStore.tree.length === 0) {
+      try {
+        const catId = await categoryStore.create(notebookId.value, '默认目录')
+        noteStore.selectedCategoryId = catId
+      } catch {
+        return // store 已显示错误
+      }
+    } else {
+      ElMessage.warning('请先在左侧选择一个目录')
+      return
+    }
   }
-  noteStore.create(noteStore.selectedCategoryId, '无标题笔记')
-    .then(note => {
-      router.push(`/note/${note.id}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
-    })
+  try {
+    // 自动递增名称：已有"无标题笔记"则命名为"无标题笔记 (2)"，以此类推
+    const existingTitles = noteStore.notes.map(n => n.title)
+    let title = '无标题笔记'
+    let counter = 2
+    while (existingTitles.includes(title)) {
+      title = `无标题笔记 (${counter++})`
+    }
+
+    const note = await noteStore.create(noteStore.selectedCategoryId, title)
+    router.push(`/note/${note.id}?nb=${notebookId.value}&nbn=${encodeURIComponent(currentNotebookName.value)}`)
+  } catch {
+    // store 已显示错误
+  }
 }
 
 function openNote(noteId: string) {

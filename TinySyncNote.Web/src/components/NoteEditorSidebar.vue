@@ -155,7 +155,16 @@ function goBackFromEditor() {
 async function createNoteInCategory(catId: string) {
   if (!catId) return
   try {
-    const note = await noteStore.create(catId, '无标题笔记')
+    // 获取该分类已有笔记，自动递增标题
+    await noteStore.fetchByCategory(catId)
+    const existingTitles = noteStore.notes.map(n => n.title)
+    let title = '无标题笔记'
+    let counter = 2
+    while (existingTitles.includes(title)) {
+      title = `无标题笔记 (${counter++})`
+    }
+
+    const note = await noteStore.create(catId, title)
     if (note) {
       noteStore.selectedCategoryId = catId
       await noteStore.fetchByCategory(catId)
@@ -187,7 +196,15 @@ async function handleDeleteNote(e: Event, noteId: string, noteTitle: string) {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
     })
     await noteStore.remove(noteId)
-    if (route.params.id === noteId) router.push('/notebooks')
+    if (route.params.id === noteId) {
+      const nbId = notebookId.value
+      const remaining = noteStore.notes
+      if (remaining.length > 0) {
+        router.push(`/note/${remaining[0].id}${nbId ? `?nb=${nbId}` : ''}`)
+      } else {
+        router.push(nbId ? `/notebook/${nbId}` : '/notebooks')
+      }
+    }
   } catch { /* cancelled */ }
 }
 </script>

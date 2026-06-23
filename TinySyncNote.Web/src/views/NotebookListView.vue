@@ -23,7 +23,17 @@ onMounted(() => {
 async function handleCreate() {
   if (!newNotebookName.value.trim()) return
   try {
-    const nb = await store.create(newNotebookName.value.trim())
+    // 自动递增名称：与已有笔记本重名时加 (2) (3) ...
+    let name = newNotebookName.value.trim()
+    const existingNames = store.notebooks.map(n => n.name)
+    if (existingNames.includes(name)) {
+      let counter = 2
+      while (existingNames.includes(`${name} (${counter})`)) {
+        counter++
+      }
+      name = `${name} (${counter})`
+    }
+    const nb = await store.create(name)
     showCreateDialog.value = false
     newNotebookName.value = ''
     router.push(`/notebook/${nb.id}`)

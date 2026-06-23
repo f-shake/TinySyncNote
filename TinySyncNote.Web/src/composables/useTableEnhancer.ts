@@ -575,25 +575,14 @@ export function useTableEnhancer(
       const range = sel.getRangeAt(0)
       if (range.collapsed) return
 
-      // 从 focusNode 或 commonAncestorContainer 找到选区涉及的表格
-      let table: HTMLTableElement | null = null
-      const cell = sel.focusNode instanceof HTMLTableCellElement
-        ? sel.focusNode
-        : sel.focusNode?.parentElement?.closest('td, th')
-      if (cell) {
-        table = cell.closest('table')
-      } else {
-        // selectNode(table) 选中整个表格时，focusNode 不在单元格内
-        // 直接检查编辑器中哪些表格被选区覆盖
-        const allTables = containerRef.value?.querySelectorAll('table') ?? []
-        for (const tbl of allTables) {
-          if (range.intersectsNode(tbl)) { table = tbl; break }
+      // 对所有被选区覆盖的表格中的单元格应用高亮
+      const allTables = containerRef.value?.querySelectorAll('table') ?? []
+      for (const table of allTables) {
+        if (!containerRef.value?.contains(table)) continue
+        if (!range.intersectsNode(table)) continue
+        for (const c of table.querySelectorAll<HTMLTableCellElement>('td, th')) {
+          if (range.intersectsNode(c)) c.classList.add(SELECTED_CLASS)
         }
-      }
-      if (!table || !containerRef.value?.contains(table)) return
-
-      for (const c of table.querySelectorAll<HTMLTableCellElement>('td, th')) {
-        if (range.intersectsNode(c)) c.classList.add(SELECTED_CLASS)
       }
     }, 30)
   }
