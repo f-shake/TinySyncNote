@@ -383,17 +383,20 @@ export function useTableEnhancer(
     notifyContentChange()
   }
 
+  // ── 按键常量 ──
+  const KEY = { TAB: 'Tab', ESC: 'Escape', A: 'a', BACKSPACE: 'Backspace', DELETE: 'Delete' }
+
   // ── 事件监听 ──
 
   function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Tab') {
+    if (e.key === KEY.TAB) {
       handleTabKey(e)
     }
-    if (e.key === 'Escape') {
+    if (e.key === KEY.ESC) {
       hideMenu()
     }
     // Ctrl+A / Cmd+A 递进选择：单元格 → 整行 → 整个表格 → 全选
-    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    if ((e.ctrlKey || e.metaKey) && e.key === KEY.A) {
       const cell = getFocusedCell()
       if (cell) {
         const table = cell.closest('table')!
@@ -430,6 +433,50 @@ export function useTableEnhancer(
         sel.addRange(targetRange)
       }
     }
+    // Backspace：选中整行→删行，选中全表→删表；Delete始终清空内容
+    if (e.key === KEY.BACKSPACE) {
+      const table = findTableFromSelection()
+      if (!table) return
+      const level = getTableSelectionLevel(table)
+      if (level < 2) return // 单元格级 → 默认行为（清空内容）
+      e.preventDefault()
+      e.stopPropagation()
+      if (level >= 3) {
+        // 全表 → 删表
+        table.parentNode?.removeChild(table)
+      } else {
+        // 整行 → 删行
+        const cell = getFocusedCell()
+        if (cell) {
+          const row = cell.closest('tr')!
+          if (table.querySelectorAll('tr').length <= 1) {
+            table.parentNode?.removeChild(table)
+          } else {
+            row.parentNode?.removeChild(row)
+          }
+        }
+      }
+      notifyContentChange()
+    }
+  }
+
+  function findTableFromSelection(): HTMLTableElement | null {
+    const sel = window.getSelection()
+    if (!sel || !sel.rangeCount) return null
+    const range = sel.getRangeAt(0)
+    // 从 focusNode 找
+    const cell = getFocusedCell()
+    if (cell) return cell.closest('table')
+    // 从 commonAncestorContainer 找
+    let node: Node | null = range.commonAncestorContainer
+    let table = node instanceof HTMLTableElement ? node
+              : node?.parentElement?.closest('table') ?? null
+    if (table) return table
+    // 遍历编辑器内所有表格
+    for (const tbl of containerRef.value?.querySelectorAll('table') ?? []) {
+      if (range.intersectsNode(tbl)) return tbl
+    }
+    return null
   }
 
   function onContextMenu(e: MouseEvent) {
