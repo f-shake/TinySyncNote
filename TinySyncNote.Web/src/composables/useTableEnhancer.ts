@@ -1,0 +1,346 @@
+/**
+ * Vditor 表格增强
+ * - Tab/Shift+Tab 在表格单元格间导航（WYSIWYG / IR 模式）
+ * - 右键自定义菜单：插入/删除行或列
+ */
+import type { Ref } from 'vue'
+
+export function useTableEnhancer(
+  containerRef: Ref<HTMLElement | null>,
+  getVditor: () => any
+) {
+  let menuEl: HTMLDivElement | null = null
+  let contextCell: HTMLTableCellElement | null = null
+
+  // ── 工具函数 ──
+
+  /** 判断节点是否在表格内 */
+  function isInsideTable(el: Node | null): boolean {
+    while (el) {
+      const table = el instanceof HTMLTableCellElement
+      if (table) return true
+      el = el.parentNode
+    }
+    return false
+  }
+
+  /** 获取光标所在的表格单元格 */
+  function getFocusedCell(): HTMLTableCellElement | null {
+    const sel = window.getSelection()
+    if (!sel?.focusNode) return null
+    return sel.focusNode instanceof HTMLTableCellElement
+      ? sel.focusNode
+      : sel.focusNode.parentElement?.closest('td, th') ?? null
+  }
+
+  /** 获取单元格在表格中的位置信息 */
+  function getCellInfo(cell: HTMLTableCellElement) {
+    const row = cell.closest('tr')!
+    const table = cell.closest('table')!
+    const rows = Array.from(table.querySelectorAll('tr'))
+    const rowIndex = rows.indexOf(row)
+    const cells = Array.from(row.cells)
+    const colIndex = cells.indexOf(cell)
+    return { table, row, rows, rowIndex, colIndex }
+  }
+
+  /** 将光标移到指定单元格 */
+  function moveCursorToCell(table: HTMLTableElement, rowIndex: number, colIndex: number) {
+    const rows = table.querySelectorAll('tr')
+    if (rowIndex < 0 || rowIndex >= rows.length) return
+    const cells = rows[rowIndex].querySelectorAll('td, th')
+    if (colIndex < 0 || colIndex >= cells.length) return
+    const cell = cells[colIndex] as HTMLTableCellElement
+    cell.focus()
+    const range = document.createRange()
+    range.selectNodeContents(cell)
+    range.collapse(true)
+    const sel = window.getSelection()
+    if (sel) {
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  }
+
+  /** 在 contenteditable 上派发 input 事件，通知 Vditor 内容已变更 */
+  function notifyContentChange() {
+    const vd = getVditor()
+    if (!vd) return
+    const mode = vd.getCurrentMode?.() || 'wysiwyg'
+    // Vditor 在不同模式下 contenteditable 元素的选择器不同
+    const selectors: Record<string, string> = {
+      wysiwyg: '.vditor-content',
+      ir: '.vditor-ir',
+      sv: '.vditor-sv textarea',
+    }
+    const el = containerRef.value?.querySelector(selectors[mode] || '.vditor-content')
+    if (el) {
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  }
+
+  // ── Tab 导航 ──
+
+  function handleTabKey(e: KeyboardEvent) {
+    const vd = getVditor()
+    if (!vd) return
+
+    // SV 模式下不拦截 Tab
+    const mode = vd.getCurrentMode?.() || 'wysiwyg'
+    if (mode === 'sv') return
+
+    const cell = getFocusedCell()
+    if (!cell) return // 不在表格内
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    const info = getCellInfo(cell)
+    const { table, rowIndex, colIndex, rows } = info
+    const cells = rows[rowIndex].querySelectorAll('td, th')
+
+    if (e.shiftKey) {
+      // Shift+Tab：前一个单元格
+      if (colIndex > 0) {
+        moveCursorToCell(table, rowIndex, colIndex - 1)
+      } else if (rowIndex > 0) {
+        const prevCells = rows[rowIndex - 1].querySelectorAll('td, th')
+        moveCursorToCell(table, rowIndex - 1, prevCells.length - 1)
+      }
+    } else {
+      // Tab：下一个单元格
+      if (colIndex < cells.length - 1) {
+        moveCursorToCell(table, rowIndex, colIndex + 1)
+      } else if (rowIndex < rows.length - 1) {
+        moveCursorToCell(table, rowIndex + 1, 0)
+      } else {
+        // 最后一个单元格 → 新增一行
+        const newRow = table.insertRow()
+        const cellCount = cells.length
+        for (let i = 0; i < cellCount; i++) {
+          const td = newRow.insertCell()
+          td.innerHTML = '<br>'
+        }
+        moveCursorToCell(table, rowIndex + 1, 0)
+      }
+    }
+
+    notifyContentChange()
+  }
+
+  // ── 右键菜单 ──
+
+  const MENU_ITEMS = [
+    { label: '在上方插入行', action: 'insertRowAbove' },
+    { label: '在下方插入行', action: 'insertRowBelow' },
+    { divider: true },
+    { label: '在左侧插入列', action: 'insertColLeft' },
+    { label: '在右侧插入列', action: 'insertColRight' },
+    { divider: true },
+    { label: '删除行', action: 'deleteRow' },
+    { label: '删除列', action: 'deleteCol' },
+  ] as const
+
+  function createMenu() {
+    if (menuEl) return
+    menuEl = document.createElement('div')
+    menuEl.className = 'vditor-table-menu'
+    // 基本样式用 class 控制（配合暗色模式），内联样式作为兜底
+    menuEl.setAttribute('style',
+      'display:none;position:fixed;z-index:99999;' +
+      'min-width:170px;padding:4px 0;font-size:13px;' +
+      'user-select:none;'
+    )
+
+    for (const item of MENU_ITEMS) {
+      if ('divider' in item) {
+        const divider = document.createElement('div')
+        divider.className = 'vditor-table-menu-divider'
+        menuEl.appendChild(divider)
+      } else {
+        const btn = document.createElement('div')
+        btn.className = 'vditor-table-menu-item'
+        btn.textContent = item.label
+        btn.dataset.action = item.action
+        btn.addEventListener('mouseenter', () => btn.classList.add('hover'))
+        btn.addEventListener('mouseleave', () => btn.classList.remove('hover'))
+        btn.addEventListener('click', () => {
+          executeAction(item.action)
+          hideMenu()
+        })
+        menuEl.appendChild(btn)
+      }
+    }
+
+    document.body.appendChild(menuEl)
+  }
+
+  function showMenu(e: MouseEvent) {
+    const target = e.target as Node
+    const cell = target instanceof HTMLTableCellElement
+      ? target
+      : target.parentElement?.closest('td, th') ?? null
+    if (!cell) return
+
+    e.preventDefault()
+    contextCell = cell
+    createMenu()
+    if (!menuEl) return
+
+    // 定位菜单位于鼠标下方
+    let x = e.clientX
+    let y = e.clientY
+    const menuW = 170
+    const menuH = menuEl.scrollHeight || 250
+    if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
+    if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
+    menuEl.style.left = x + 'px'
+    menuEl.style.top = y + 'px'
+    menuEl.style.display = 'block'
+  }
+
+  function hideMenu() {
+    if (menuEl) menuEl.style.display = 'none'
+    contextCell = null
+  }
+
+  function executeAction(action: string) {
+    if (!contextCell) return
+    const info = getCellInfo(contextCell)
+    const { table, rowIndex, colIndex, rows } = info
+
+    const isInThead = rows[rowIndex].closest('thead') !== null
+    const createCell = (asTh: boolean) => {
+      const cell = document.createElement(asTh ? 'th' : 'td')
+      cell.innerHTML = '<br>'
+      return cell
+    }
+
+    switch (action) {
+      case 'insertRowAbove': {
+        const curRow = rows[rowIndex]
+        const cellCount = curRow.cells.length
+        if (isInThead) {
+          // 新行成为表头，旧表头移到 tbody 顶部并转为 td
+          const newRow = document.createElement('tr')
+          for (let i = 0; i < cellCount; i++) newRow.appendChild(createCell(true))
+          curRow.parentNode?.insertBefore(newRow, curRow)
+
+          const tbody = table.querySelector('tbody') || table.createTBody()
+          const movedRow = document.createElement('tr')
+          for (let i = 0; i < cellCount; i++) {
+            const td = document.createElement('td')
+            td.innerHTML = curRow.cells[i].innerHTML || '<br>'
+            movedRow.appendChild(td)
+          }
+          curRow.remove()
+          tbody.insertBefore(movedRow, tbody.firstChild)
+        } else {
+          const newRow = document.createElement('tr')
+          for (let i = 0; i < cellCount; i++) newRow.appendChild(createCell(false))
+          curRow.parentNode?.insertBefore(newRow, curRow)
+        }
+        break
+      }
+      case 'insertRowBelow': {
+        const curRow = rows[rowIndex]
+        const cellCount = curRow.cells.length
+        if (isInThead) {
+          // 在表头下方插入 → 插入一条表体行到 tbody 顶部
+          const tbody = table.querySelector('tbody') || table.createTBody()
+          const newRow = document.createElement('tr')
+          for (let i = 0; i < cellCount; i++) newRow.appendChild(createCell(false))
+          tbody.insertBefore(newRow, tbody.firstChild)
+        } else {
+          const newRow = document.createElement('tr')
+          for (let i = 0; i < cellCount; i++) newRow.appendChild(createCell(false))
+          curRow.parentNode?.insertBefore(newRow, curRow.nextSibling)
+        }
+        break
+      }
+      case 'insertColLeft': {
+        for (const row of rows) {
+          const isTh = row.closest('thead') !== null
+          const cell = createCell(isTh)
+          row.insertBefore(cell, row.cells[colIndex] ?? null)
+        }
+        break
+      }
+      case 'insertColRight': {
+        for (const row of rows) {
+          const isTh = row.closest('thead') !== null
+          const cell = createCell(isTh)
+          row.insertBefore(cell, row.cells[colIndex + 1] ?? null)
+        }
+        break
+      }
+      case 'deleteRow': {
+        if (rows.length <= 1) {
+          table.parentNode?.removeChild(table)
+        } else {
+          rows[rowIndex].parentNode?.removeChild(rows[rowIndex])
+        }
+        break
+      }
+      case 'deleteCol': {
+        const cellCount = rows[0]?.cells.length ?? 0
+        if (cellCount <= 1) {
+          table.parentNode?.removeChild(table)
+        } else {
+          for (const row of rows) {
+            const cells = row.querySelectorAll('td, th')
+            if (cells[colIndex]) cells[colIndex].remove()
+          }
+        }
+        break
+      }
+    }
+
+    notifyContentChange()
+  }
+
+  // ── 事件监听 ──
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Tab') {
+      handleTabKey(e)
+    }
+    if (e.key === 'Escape') {
+      hideMenu()
+    }
+  }
+
+  function onContextMenu(e: MouseEvent) {
+    if (!containerRef.value?.contains(e.target as Node)) return
+    if (isInsideTable(e.target as Node)) {
+      e.preventDefault()
+      showMenu(e)
+    }
+  }
+
+  function onMouseDown(e: MouseEvent) {
+    if (menuEl && !menuEl.contains(e.target as Node)) {
+      hideMenu()
+    }
+  }
+
+  // ── 公开 API ──
+
+  function setup() {
+    // 使用捕获阶段拦截 Tab，确保在 Vditor 内部处理器之前触发
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('contextmenu', onContextMenu)
+    document.addEventListener('mousedown', onMouseDown)
+  }
+
+  function cleanup() {
+    document.removeEventListener('keydown', onKeyDown, true)
+    document.removeEventListener('contextmenu', onContextMenu)
+    document.removeEventListener('mousedown', onMouseDown)
+    hideMenu()
+    menuEl?.remove()
+    menuEl = null
+  }
+
+  return { setup, cleanup }
+}

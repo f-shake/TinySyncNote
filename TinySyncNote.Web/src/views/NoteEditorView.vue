@@ -11,6 +11,7 @@ import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
+import { useTableEnhancer } from '../composables/useTableEnhancer'
 import ShareDialog from '../components/ShareDialog.vue'
 import AIChatPanel from '../components/AIChatPanel.vue'
 import http from '../utils/http'
@@ -77,6 +78,7 @@ function getAutoSaveInterval(): number {
 let vditor: Vditor | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let modeCheckTimer: ReturnType<typeof setInterval> | null = null
+let tableEnhancer: ReturnType<typeof useTableEnhancer> | null = null
 let lastSavedVersion = 0
 let pendingSaveVersion = 0  // 正在保存的版本号，用于过滤自己的 SignalR 通知
 
@@ -162,6 +164,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (saveTimer) clearTimeout(saveTimer)
   if (modeCheckTimer) clearInterval(modeCheckTimer)
+  tableEnhancer?.cleanup()
   vditor?.destroy()
 })
 
@@ -317,6 +320,11 @@ function initEditor(content: string) {
       document.addEventListener('keyup', (e) => {
         if (vditor && editorRef.value?.contains(e.target as Node)) trackSelection()
       })
+
+      // 表格增强：Tab 导航 + 右键菜单
+      const enhancer = useTableEnhancer(editorRef, () => vditor)
+      enhancer.setup()
+      tableEnhancer = enhancer
     }
   })
 }
@@ -982,4 +990,27 @@ html.dark .hljs-params { color: #d4d4d4 !important; }
 html.dark .hljs-meta { color: #dcdcaa !important; }
 html.dark .hljs-link { color: #569cd6 !important; text-decoration: underline; }
 html.dark .hljs-title, html.dark .hljs-title.function_ { color: #dcdcaa !important; }
+
+/* 表格增强右键菜单 — 跟随 Element Plus 设计语言 */
+.vditor-table-menu {
+  background: var(--el-bg-color, #fff);
+  border: 1px solid var(--el-border-color, #dcdfe6);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  font-family: inherit;
+}
+.vditor-table-menu .vditor-table-menu-item {
+  padding: 6px 16px;
+  cursor: pointer;
+  color: var(--el-text-color-primary, #303133);
+  transition: background 0.12s;
+}
+.vditor-table-menu .vditor-table-menu-item.hover {
+  background: var(--el-fill-color-light, #f5f7fa);
+}
+.vditor-table-menu .vditor-table-menu-divider {
+  height: 1px;
+  background: var(--el-border-color-light, #e4e7ed);
+  margin: 4px 0;
+}
 </style>
