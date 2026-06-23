@@ -510,6 +510,47 @@ export function useTableEnhancer(
     return out
   }
 
+  // ── 选中单元格高亮 ──
+
+  let _highlightTimer: ReturnType<typeof setTimeout> | null = null
+  const SELECTED_CLASS = 'tsn-cell-selected'
+
+  function onSelectionChange() {
+    if (_highlightTimer) clearTimeout(_highlightTimer)
+    _highlightTimer = setTimeout(() => {
+      // 先清除所有高亮
+      if (containerRef.value) {
+        containerRef.value.querySelectorAll(`.${SELECTED_CLASS}`).forEach(el =>
+          el.classList.remove(SELECTED_CLASS))
+      }
+      const sel = window.getSelection()
+      if (!sel || !sel.rangeCount || !containerRef.value?.contains(sel.focusNode as Node)) return
+      const range = sel.getRangeAt(0)
+      if (range.collapsed) return
+
+      // 从 focusNode 或 commonAncestorContainer 找到选区涉及的表格
+      let table: HTMLTableElement | null = null
+      const cell = sel.focusNode instanceof HTMLTableCellElement
+        ? sel.focusNode
+        : sel.focusNode?.parentElement?.closest('td, th')
+      if (cell) {
+        table = cell.closest('table')
+      } else {
+        // selectNode(table) 选中整个表格时，focusNode 不在单元格内
+        // 直接检查编辑器中哪些表格被选区覆盖
+        const allTables = containerRef.value?.querySelectorAll('table') ?? []
+        for (const tbl of allTables) {
+          if (range.intersectsNode(tbl)) { table = tbl; break }
+        }
+      }
+      if (!table || !containerRef.value?.contains(table)) return
+
+      for (const c of table.querySelectorAll<HTMLTableCellElement>('td, th')) {
+        if (range.intersectsNode(c)) c.classList.add(SELECTED_CLASS)
+      }
+    }, 30)
+  }
+
   // ── 公开 API ──
 
   function setup() {
@@ -519,6 +560,7 @@ export function useTableEnhancer(
     document.addEventListener('mousedown', onMouseDown)
     // copy 不冒泡，用 capture 确保在 Vditor 之前拿到事件
     document.addEventListener('copy', onCopy, true)
+    document.addEventListener('selectionchange', onSelectionChange)
   }
 
   function cleanup() {
@@ -526,6 +568,8 @@ export function useTableEnhancer(
     document.removeEventListener('contextmenu', onContextMenu)
     document.removeEventListener('mousedown', onMouseDown)
     document.removeEventListener('copy', onCopy, true)
+    document.removeEventListener('selectionchange', onSelectionChange)
+    if (_highlightTimer) clearTimeout(_highlightTimer)
     hideMenu()
     menuEl?.remove()
     menuEl = null

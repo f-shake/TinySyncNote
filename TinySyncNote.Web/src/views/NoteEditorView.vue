@@ -1091,4 +1091,17 @@ html.dark .hljs-title, html.dark .hljs-title.function_ { color: #dcdcaa !importa
   background: var(--el-border-color-light, #e4e7ed);
   margin: 4px 0;
 }
+
+/* Vditor 选中单元格高亮（由 useTableEnhancer 控制 class） */
+.vditor-reset td.tsn-cell-selected,
+.vditor-reset th.tsn-cell-selected {
+  background: rgba(64, 158, 255, 0.3) !important;
+  outline: 2px solid rgba(64, 158, 255, 0.7) !important;
+  outline-offset: -2px;
+}
+html.dark .vditor-reset td.tsn-cell-selected,
+html.dark .vditor-reset th.tsn-cell-selected {
+  background: rgba(64, 158, 255, 0.35) !important;
+  outline: 2px solid rgba(64, 158, 255, 0.7) !important;
+}
 </style>
