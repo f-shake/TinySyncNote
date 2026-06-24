@@ -493,17 +493,54 @@ export function useTableEnhancer(
     }
   }
 
-  /** 复制拦截：当选区在表格内时，构造只含选中单元格的 <table> HTML */
+  /** 复制拦截：剪贴板同时输出 HTML（Word 等用）和纯文本（Markdown） */
   function onCopy(e: ClipboardEvent) {
-    // 只拦截编辑器内的复制
     if (!containerRef.value?.contains(e.target as Node)) return
-    const fragment = buildTableFromSelection()
-    if (!fragment) return
+    const sel = window.getSelection()
+    if (!sel || !sel.rangeCount) return
+    const range = sel.getRangeAt(0)
+    if (range.collapsed) return
+
     e.preventDefault()
     e.stopPropagation()
-    const html = fragment.outerHTML
-    e.clipboardData?.setData('text/html', html)
-    e.clipboardData?.setData('text/plain', fragment.textContent || '')
+
+    // 纯文本格式 → 从 Vditor 取完整 Markdown（精简为目标选区后返回）
+    const vd = getVditor()
+    const fullMd = vd?.getValue() || ''
+    const selectedText = sel.toString()
+    // 尝试从全文定位选中的文本作为 Markdown（精确匹配）
+    let md = selectedText
+    if (selectedText && fullMd.includes(selectedText)) {
+      md = selectedText
+    }
+    e.clipboardData?.setData('text/plain', md)
+
+    // HTML 格式 → 构造干净渲染 HTML
+    const div = document.createElement('div')
+    div.appendChild(range.cloneContents())
+    // 移除 Vditor 内部标记
+    div.querySelectorAll('.vditor-ir__marker, .vditor-wysiwyg__marker').forEach(el => el.remove())
+    div.querySelectorAll('[data-block], [data-type]').forEach(el => {
+      el.removeAttribute('data-block')
+      el.removeAttribute('data-type')
+    })
+    // 表格选区：替换为独立 table 结构
+    const tableFragment = buildTableFromSelection()
+    if (tableFragment) {
+      styleTableForClipboard(tableFragment)
+      e.clipboardData?.setData('text/html', tableFragment.outerHTML)
+      return
+    }
+    e.clipboardData?.setData('text/html', div.innerHTML)
+  }
+
+  /** 给表格加上内联边框样式（剪贴板 HTML 不含外部样式表） */
+  function styleTableForClipboard(table: HTMLTableElement) {
+    table.setAttribute('style', 'border-collapse:collapse; border:1px solid #bbb;')
+    for (const cell of table.querySelectorAll<HTMLElement>('td, th')) {
+      cell.style.border = '1px solid #bbb'
+      cell.style.padding = '4px 8px'
+    }
   }
 
   /** 根据当前选区，构造包含所选单元格的 <table> 元素（完整选区返回原表，部分选区只取选中的行列） */
