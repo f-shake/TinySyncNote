@@ -2,6 +2,9 @@
  * Vditor 表格增强
  * - Tab/Shift+Tab 在表格单元格间导航（WYSIWYG / IR 模式）
  * - 右键自定义菜单：插入/删除行或列
+ * - Ctrl+A 递进选择（单元格→行→表）
+ * - 选中单元格高亮
+ * - Backspace 删除行/表
  */
 import type { Ref } from 'vue'
 
@@ -67,7 +70,6 @@ export function useTableEnhancer(
     const vd = getVditor()
     if (!vd) return
     const mode = vd.getCurrentMode?.() || 'wysiwyg'
-    // Vditor 在不同模式下 contenteditable 元素的选择器不同
     const selectors: Record<string, string> = {
       wysiwyg: '.vditor-content',
       ir: '.vditor-ir',
@@ -85,13 +87,11 @@ export function useTableEnhancer(
     if (!sel || sel.rangeCount === 0) return 0
     const range = sel.getRangeAt(0)
 
-    // 折叠选区（只有光标，没有选中内容）→ 无选区
     if (range.collapsed) return 0
 
     const allCells = Array.from(table.querySelectorAll<HTMLTableCellElement>('td, th'))
     if (allCells.length === 0) return 0
 
-    // 收集选区覆盖到的单元格
     const touched = new Set<HTMLTableCellElement>()
     const touchedRows = new Set<HTMLTableRowElement>()
     for (const cell of allCells) {
@@ -101,7 +101,6 @@ export function useTableEnhancer(
       }
     }
 
-    // 选区混合：一部分在表格内，一部分在表格外 → 直接全选
     if (touched.size > 0) {
       const tableNode: Node = table
       if (!tableNode.contains(range.startContainer) || !tableNode.contains(range.endContainer)) {
@@ -111,16 +110,33 @@ export function useTableEnhancer(
 
     const totalCells = allCells.length
 
-    if (touched.size >= totalCells) return 3          // 覆盖了全部单元格 → 表级
-    if (touchedRows.size > 1) return 2                 // 跨行 → 行级已满，跳到表级
+    if (touched.size >= totalCells) return 3
+    if (touchedRows.size > 1) return 2
     if (touchedRows.size === 1 && touched.size > 0) {
       const row = touchedRows.values().next().value!
       const rowCells = row.querySelectorAll('td, th')
-      if (touched.size >= rowCells.length) return 2   // 覆盖了整行 → 行级
-      return 1                                         // 单行内部分内容 → 单元格级
+      if (touched.size >= rowCells.length) return 2
+      return 1
     }
 
     return 0
+  }
+
+  /** 根据选区获取被覆盖的表格元素（供外部使用，如剪贴板处理） */
+  function findTableFromSelection(): HTMLTableElement | null {
+    const sel = window.getSelection()
+    if (!sel || !sel.rangeCount) return null
+    const range = sel.getRangeAt(0)
+    const cell = getFocusedCell()
+    if (cell) return cell.closest('table')
+    let node: Node | null = range.commonAncestorContainer
+    let table = node instanceof HTMLTableElement ? node
+              : node?.parentElement?.closest('table') ?? null
+    if (table) return table
+    for (const tbl of containerRef.value?.querySelectorAll('table') ?? []) {
+      if (range.intersectsNode(tbl)) return tbl
+    }
+    return null
   }
 
   // ── Tab 导航 ──
@@ -129,12 +145,11 @@ export function useTableEnhancer(
     const vd = getVditor()
     if (!vd) return
 
-    // SV 模式下不拦截 Tab
     const mode = vd.getCurrentMode?.() || 'wysiwyg'
     if (mode === 'sv') return
 
     const cell = getFocusedCell()
-    if (!cell) return // 不在表格内
+    if (!cell) return
 
     e.preventDefault()
     e.stopPropagation()
@@ -144,7 +159,6 @@ export function useTableEnhancer(
     const cells = rows[rowIndex].querySelectorAll('td, th')
 
     if (e.shiftKey) {
-      // Shift+Tab：前一个单元格
       if (colIndex > 0) {
         moveCursorToCell(table, rowIndex, colIndex - 1)
       } else if (rowIndex > 0) {
@@ -152,13 +166,11 @@ export function useTableEnhancer(
         moveCursorToCell(table, rowIndex - 1, prevCells.length - 1)
       }
     } else {
-      // Tab：下一个单元格
       if (colIndex < cells.length - 1) {
         moveCursorToCell(table, rowIndex, colIndex + 1)
       } else if (rowIndex < rows.length - 1) {
         moveCursorToCell(table, rowIndex + 1, 0)
       } else {
-        // 最后一个单元格 → 新增一行
         const newRow = table.insertRow()
         const cellCount = cells.length
         for (let i = 0; i < cellCount; i++) {
@@ -194,7 +206,6 @@ export function useTableEnhancer(
     if (menuEl) return
     menuEl = document.createElement('div')
     menuEl.className = 'vditor-table-menu'
-    // 基本样式用 class 控制（配合暗色模式），内联样式作为兜底
     menuEl.setAttribute('style',
       'display:none;position:fixed;z-index:99999;' +
       'min-width:170px;padding:4px 0;font-size:13px;' +
@@ -236,7 +247,6 @@ export function useTableEnhancer(
     createMenu()
     if (!menuEl) return
 
-    // 先显示才能测出真实高度
     menuEl.style.display = 'block'
     const menuW = menuEl.offsetWidth
     const menuH = menuEl.offsetHeight
@@ -271,7 +281,6 @@ export function useTableEnhancer(
         const curRow = rows[rowIndex]
         const cellCount = curRow.cells.length
         if (isInThead) {
-          // 新行成为表头，旧表头移到 tbody 顶部并转为 td
           const newRow = document.createElement('tr')
           for (let i = 0; i < cellCount; i++) newRow.appendChild(createCell(true))
           curRow.parentNode?.insertBefore(newRow, curRow)
@@ -296,7 +305,6 @@ export function useTableEnhancer(
         const curRow = rows[rowIndex]
         const cellCount = curRow.cells.length
         if (isInThead) {
-          // 在表头下方插入 → 插入一条表体行到 tbody 顶部
           const tbody = table.querySelector('tbody') || table.createTBody()
           const newRow = document.createElement('tr')
           for (let i = 0; i < cellCount; i++) newRow.appendChild(createCell(false))
@@ -355,7 +363,6 @@ export function useTableEnhancer(
                     : action === 'alignCenter' ? 'center'
                     : 'right'
 
-        // 确定受影响列：如果有选区则应用于所有被选中的列
         const targetCols = new Set<number>()
         const sel = window.getSelection()
         if (sel?.rangeCount) {
@@ -367,7 +374,6 @@ export function useTableEnhancer(
             }
           }
         }
-        // 无选区时退回到右键点击的列
         if (targetCols.size === 0) targetCols.add(colIndex)
 
         for (const row of rows) {
@@ -384,7 +390,7 @@ export function useTableEnhancer(
   }
 
   // ── 按键常量 ──
-  const KEY = { TAB: 'Tab', ESC: 'Escape', A: 'a', BACKSPACE: 'Backspace', DELETE: 'Delete' }
+  const KEY = { TAB: 'Tab', ESC: 'Escape', A: 'a', BACKSPACE: 'Backspace' }
 
   // ── 事件监听 ──
 
@@ -395,7 +401,6 @@ export function useTableEnhancer(
     if (e.key === KEY.ESC) {
       hideMenu()
     }
-    // Ctrl+A / Cmd+A 递进选择：单元格 → 整行 → 整个表格 → 全选
     if ((e.ctrlKey || e.metaKey) && e.key === KEY.A) {
       const cell = getFocusedCell()
       if (cell) {
@@ -404,7 +409,6 @@ export function useTableEnhancer(
         const sel = window.getSelection()
         if (!sel) return
 
-        // Level 3+：已经是全表 → 放行给默认行为（全选）
         if (level >= 3) return
 
         e.preventDefault()
@@ -413,18 +417,15 @@ export function useTableEnhancer(
         let targetRange: Range
 
         if (level === 2) {
-          // 已选中整行 → 选中整个表格（selectNode 包含 <table> 标签，复制保留结构）
           targetRange = document.createRange()
           targetRange.selectNode(table)
         } else if (level === 1) {
-          // 已选中单元格 → 选中整行
           const row = cell.closest('tr')!
           const rowCells = row.querySelectorAll('td, th')
           targetRange = document.createRange()
           targetRange.setStart(rowCells[0], 0)
           targetRange.setEnd(rowCells[rowCells.length - 1], rowCells[rowCells.length - 1].childNodes.length)
         } else {
-          // 未选中/部分选中 → 选中当前单元格内容
           targetRange = document.createRange()
           targetRange.selectNodeContents(cell)
         }
@@ -433,19 +434,16 @@ export function useTableEnhancer(
         sel.addRange(targetRange)
       }
     }
-    // Backspace：选中整行→删行，选中全表→删表；Delete始终清空内容
     if (e.key === KEY.BACKSPACE) {
       const table = findTableFromSelection()
       if (!table) return
       const level = getTableSelectionLevel(table)
-      if (level < 2) return // 单元格级 → 默认行为（清空内容）
+      if (level < 2) return
       e.preventDefault()
       e.stopPropagation()
       if (level >= 3) {
-        // 全表 → 删表
         table.parentNode?.removeChild(table)
       } else {
-        // 整行 → 删行
         const cell = getFocusedCell()
         if (cell) {
           const row = cell.closest('tr')!
@@ -458,25 +456,6 @@ export function useTableEnhancer(
       }
       notifyContentChange()
     }
-  }
-
-  function findTableFromSelection(): HTMLTableElement | null {
-    const sel = window.getSelection()
-    if (!sel || !sel.rangeCount) return null
-    const range = sel.getRangeAt(0)
-    // 从 focusNode 找
-    const cell = getFocusedCell()
-    if (cell) return cell.closest('table')
-    // 从 commonAncestorContainer 找
-    let node: Node | null = range.commonAncestorContainer
-    let table = node instanceof HTMLTableElement ? node
-              : node?.parentElement?.closest('table') ?? null
-    if (table) return table
-    // 遍历编辑器内所有表格
-    for (const tbl of containerRef.value?.querySelectorAll('table') ?? []) {
-      if (range.intersectsNode(tbl)) return tbl
-    }
-    return null
   }
 
   function onContextMenu(e: MouseEvent) {
@@ -493,107 +472,6 @@ export function useTableEnhancer(
     }
   }
 
-  /** 复制拦截：剪贴板同时输出 HTML（Word 等用）和纯文本（Markdown） */
-  function onCopy(e: ClipboardEvent) {
-    if (!containerRef.value?.contains(e.target as Node)) return
-    const sel = window.getSelection()
-    if (!sel || !sel.rangeCount) return
-    const range = sel.getRangeAt(0)
-    if (range.collapsed) return
-
-    e.preventDefault()
-    e.stopPropagation()
-
-    // 纯文本格式 → 从 Vditor 取完整 Markdown（精简为目标选区后返回）
-    const vd = getVditor()
-    const fullMd = vd?.getValue() || ''
-    const selectedText = sel.toString()
-    // 尝试从全文定位选中的文本作为 Markdown（精确匹配）
-    let md = selectedText
-    if (selectedText && fullMd.includes(selectedText)) {
-      md = selectedText
-    }
-    e.clipboardData?.setData('text/plain', md)
-
-    // HTML 格式 → 构造干净渲染 HTML
-    const div = document.createElement('div')
-    div.appendChild(range.cloneContents())
-    // 移除 Vditor 内部标记
-    div.querySelectorAll('.vditor-ir__marker, .vditor-wysiwyg__marker').forEach(el => el.remove())
-    div.querySelectorAll('[data-block], [data-type]').forEach(el => {
-      el.removeAttribute('data-block')
-      el.removeAttribute('data-type')
-    })
-    // 表格选区：替换为独立 table 结构
-    const tableFragment = buildTableFromSelection()
-    if (tableFragment) {
-      styleTableForClipboard(tableFragment)
-      e.clipboardData?.setData('text/html', tableFragment.outerHTML)
-      return
-    }
-    e.clipboardData?.setData('text/html', div.innerHTML)
-  }
-
-  /** 给表格加上内联边框样式（剪贴板 HTML 不含外部样式表） */
-  function styleTableForClipboard(table: HTMLTableElement) {
-    table.setAttribute('style', 'border-collapse:collapse; border:1px solid #bbb;')
-    for (const cell of table.querySelectorAll<HTMLElement>('td, th')) {
-      cell.style.border = '1px solid #bbb'
-      cell.style.padding = '4px 8px'
-    }
-  }
-
-  /** 根据当前选区，构造包含所选单元格的 <table> 元素（完整选区返回原表，部分选区只取选中的行列） */
-  function buildTableFromSelection(): HTMLTableElement | null {
-    const sel = window.getSelection()
-    if (!sel || !sel.rangeCount) return null
-    const range = sel.getRangeAt(0)
-
-    // 找到选区所在的表格
-    let node: Node | null = range.commonAncestorContainer
-    let table = node instanceof HTMLTableElement ? node
-              : node?.parentElement?.closest('table') ?? null
-    if (!table) return null
-
-    const allRows = Array.from(table.querySelectorAll('tr'))
-    const allCells = Array.from(table.querySelectorAll<HTMLTableCellElement>('td, th'))
-
-    // 找出被选区覆盖的单元格
-    const touched = new Set<HTMLTableCellElement>()
-    for (const cell of allCells) {
-      if (range.intersectsNode(cell)) touched.add(cell)
-    }
-    if (touched.size === 0) return null
-
-    // 全选 → 直接返回原表
-    if (touched.size >= allCells.length) return table.cloneNode(true) as HTMLTableElement
-
-    // 部分选中 → 构造新表
-    const out = document.createElement('table')
-    const outTbody = document.createElement('tbody')
-    out.appendChild(outTbody)
-
-    for (const row of allRows) {
-      const rowCells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td, th'))
-      const kept = rowCells.filter(c => touched.has(c))
-      if (kept.length === 0) continue // 该行无选中单元格
-      const outTr = document.createElement('tr')
-      for (const cell of kept) {
-        const tag = cell.tagName === 'TH' ? 'th' : 'td'
-        const newCell = document.createElement(tag)
-        newCell.innerHTML = cell.innerHTML
-        // 复制文本对齐样式
-        if (cell.matches('[style*="text-align"]')) {
-          newCell.style.textAlign = cell.style.textAlign
-        }
-        outTr.appendChild(newCell)
-      }
-      outTbody.appendChild(outTr)
-    }
-
-    return out
-  }
-
   // ── 选中单元格高亮 ──
 
   let _highlightTimer: ReturnType<typeof setTimeout> | null = null
@@ -602,7 +480,6 @@ export function useTableEnhancer(
   function onSelectionChange() {
     if (_highlightTimer) clearTimeout(_highlightTimer)
     _highlightTimer = setTimeout(() => {
-      // 先清除所有高亮
       if (containerRef.value) {
         containerRef.value.querySelectorAll(`.${SELECTED_CLASS}`).forEach(el =>
           el.classList.remove(SELECTED_CLASS))
@@ -612,7 +489,6 @@ export function useTableEnhancer(
       const range = sel.getRangeAt(0)
       if (range.collapsed) return
 
-      // 对所有被选区覆盖的表格中的单元格应用高亮
       const allTables = containerRef.value?.querySelectorAll('table') ?? []
       for (const table of allTables) {
         if (!containerRef.value?.contains(table)) continue
@@ -627,12 +503,9 @@ export function useTableEnhancer(
   // ── 公开 API ──
 
   function setup() {
-    // 使用捕获阶段拦截 Tab，确保在 Vditor 内部处理器之前触发
     document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('mousedown', onMouseDown)
-    // copy 不冒泡，用 capture 确保在 Vditor 之前拿到事件
-    document.addEventListener('copy', onCopy, true)
     document.addEventListener('selectionchange', onSelectionChange)
   }
 
@@ -640,7 +513,6 @@ export function useTableEnhancer(
     document.removeEventListener('keydown', onKeyDown, true)
     document.removeEventListener('contextmenu', onContextMenu)
     document.removeEventListener('mousedown', onMouseDown)
-    document.removeEventListener('copy', onCopy, true)
     document.removeEventListener('selectionchange', onSelectionChange)
     if (_highlightTimer) clearTimeout(_highlightTimer)
     hideMenu()
@@ -648,5 +520,5 @@ export function useTableEnhancer(
     menuEl = null
   }
 
-  return { setup, cleanup }
+  return { setup, cleanup, findTableFromSelection, getTableSelectionLevel }
 }

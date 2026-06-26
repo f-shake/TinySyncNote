@@ -11,7 +11,7 @@ import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
-import { useTableEnhancer } from '../composables/useTableEnhancer'
+import { useTableEnhancer, useClipboardEnhancer } from '../editor'
 import ShareDialog from '../components/ShareDialog.vue'
 import AIChatPanel from '../components/AIChatPanel.vue'
 import http from '../utils/http'
@@ -114,6 +114,7 @@ let vditor: Vditor | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let modeCheckTimer: ReturnType<typeof setInterval> | null = null
 let tableEnhancer: ReturnType<typeof useTableEnhancer> | null = null
+let clipboardEnhancer: ReturnType<typeof useClipboardEnhancer> | null = null
 let lastSavedVersion = 0
 let pendingSaveVersion = 0  // 正在保存的版本号，用于过滤自己的 SignalR 通知
 
@@ -199,6 +200,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (saveTimer) clearTimeout(saveTimer)
   if (modeCheckTimer) clearInterval(modeCheckTimer)
+  clipboardEnhancer?.cleanup()
   tableEnhancer?.cleanup()
   vditor?.destroy()
 })
@@ -381,6 +383,10 @@ function initEditor(content: string) {
       const enhancer = useTableEnhancer(editorRef, () => vditor)
       enhancer.setup()
       tableEnhancer = enhancer
+      // 剪贴板增强：复制时输出 HTML + Markdown
+      const clipboard = useClipboardEnhancer(editorRef, () => vditor)
+      clipboard.setup()
+      clipboardEnhancer = clipboard
     }
   })
 }
@@ -1023,85 +1029,4 @@ function onTitleChange() {
   .toolbar-actions { gap: 2px; }
 }
 
-</style>
-<style>
-html.dark .vditor-reset pre,
-html.dark .vditor-reset .hljs,
-html.dark .vditor-ir__marker--pre,
-html.dark .vditor-wysiwyg pre,
-html.dark .vditor-wysiwyg code {
-  background: #1e1e1e !important;
-  color: #d4d4d4 !important;
-}
-/* 行内代码 —— 柔和暗色 */
-html.dark .vditor-reset code:not(.hljs):not([class*="language-"]),
-html.dark .vditor-ir__marker--info code,
-html.dark .vditor-ir__marker code {
-  background: #2d2d2d !important;
-  color: #ce9178 !important;
-  border: 1px solid #3a3a3a !important;
-  padding: 1px 5px !important;
-  border-radius: 3px !important;
-}
-/* 编辑器内围栏代码块 —— 去掉暗蓝底 */
-html.dark .vditor-ir__marker--pre {
-  background: #252526 !important;
-  border-color: #3a3a3a !important;
-}
-html.dark .vditor-ir__marker--pre .vditor-ir__marker {
-  background: transparent !important;
-}
-html.dark .vditor-copy span { color: #ccc !important; }
-html.dark .vditor-linenumber__rows { background: #1e1e1e !important; }
-/* highlight.js VS Code Dark+ */
-html.dark .hljs-keyword { color: #569cd6 !important; }
-html.dark .hljs-string { color: #ce9178 !important; }
-html.dark .hljs-comment, html.dark .hljs-quote { color: #6a9955 !important; }
-html.dark .hljs-number { color: #b5cea8 !important; }
-html.dark .hljs-built_in { color: #4ec9b0 !important; }
-html.dark .hljs-attr, html.dark .hljs-attribute { color: #9cdcfe !important; }
-html.dark .hljs-selector-tag, html.dark .hljs-tag, html.dark .hljs-name, html.dark .hljs-literal { color: #569cd6 !important; }
-html.dark .hljs-selector-id, html.dark .hljs-selector-class, html.dark .hljs-section, html.dark .hljs-deletion { color: #e06c75 !important; }
-html.dark .hljs-type { color: #4ec9b0 !important; }
-html.dark .hljs-addition { color: #6a9955 !important; }
-html.dark .hljs-params { color: #d4d4d4 !important; }
-html.dark .hljs-meta { color: #dcdcaa !important; }
-html.dark .hljs-link { color: #569cd6 !important; text-decoration: underline; }
-html.dark .hljs-title, html.dark .hljs-title.function_ { color: #dcdcaa !important; }
-
-/* 表格增强右键菜单 — 跟随 Element Plus 设计语言 */
-.vditor-table-menu {
-  background: var(--el-bg-color, #fff);
-  border: 1px solid var(--el-border-color, #dcdfe6);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  font-family: inherit;
-}
-.vditor-table-menu .vditor-table-menu-item {
-  padding: 6px 16px;
-  cursor: pointer;
-  color: var(--el-text-color-primary, #303133);
-  transition: background 0.12s;
-}
-.vditor-table-menu .vditor-table-menu-item.hover {
-  background: var(--el-fill-color-light, #f5f7fa);
-}
-.vditor-table-menu .vditor-table-menu-divider {
-  height: 1px;
-  background: var(--el-border-color-light, #e4e7ed);
-  margin: 4px 0;
-}
-
-/* Vditor 选中单元格高亮（由 useTableEnhancer 控制 class） */
-.vditor-reset td.tsn-cell-selected,
-.vditor-reset th.tsn-cell-selected {
-  background: rgba(64, 158, 255, 0.3) !important;
-  outline: 2px solid rgba(64, 158, 255, 0.7) !important;
-  outline-offset: -2px;
-}
-html.dark .vditor-reset td.tsn-cell-selected,
-html.dark .vditor-reset th.tsn-cell-selected {
-  background: rgba(64, 158, 255, 0.35) !important;
-  outline: 2px solid rgba(64, 158, 255, 0.7) !important;
-}
 </style>
