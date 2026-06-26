@@ -11,7 +11,7 @@ import { ElMessageBox } from 'element-plus'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { useSync } from '../composables/useSync'
-import { useTableEnhancer, useClipboardEnhancer } from '../editor'
+import { useTableEnhancer, useClipboardEnhancer, useCtrlAEnhancer } from '../editor'
 import ShareDialog from '../components/ShareDialog.vue'
 import AIChatPanel from '../components/AIChatPanel.vue'
 import http from '../utils/http'
@@ -115,6 +115,7 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 let modeCheckTimer: ReturnType<typeof setInterval> | null = null
 let tableEnhancer: ReturnType<typeof useTableEnhancer> | null = null
 let clipboardEnhancer: ReturnType<typeof useClipboardEnhancer> | null = null
+let ctrlAEnhancer: ReturnType<typeof useCtrlAEnhancer> | null = null
 let lastSavedVersion = 0
 let pendingSaveVersion = 0  // 正在保存的版本号，用于过滤自己的 SignalR 通知
 
@@ -200,6 +201,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (saveTimer) clearTimeout(saveTimer)
   if (modeCheckTimer) clearInterval(modeCheckTimer)
+  ctrlAEnhancer?.cleanup()
   clipboardEnhancer?.cleanup()
   tableEnhancer?.cleanup()
   vditor?.destroy()
@@ -387,6 +389,13 @@ function initEditor(content: string) {
       const clipboard = useClipboardEnhancer(editorRef, () => vditor)
       clipboard.setup()
       clipboardEnhancer = clipboard
+      // Ctrl+A 递进选择
+      const ctrlA = useCtrlAEnhancer(editorRef, () => vditor, {
+        getFocusedCell: enhancer.getFocusedCell,
+        getTableSelectionLevel: enhancer.getTableSelectionLevel,
+      })
+      ctrlA.setup()
+      ctrlAEnhancer = ctrlA
     }
   })
 }

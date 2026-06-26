@@ -390,7 +390,7 @@ export function useTableEnhancer(
   }
 
   // ── 按键常量 ──
-  const KEY = { TAB: 'Tab', ESC: 'Escape', A: 'a', BACKSPACE: 'Backspace' }
+  const KEY = { TAB: 'Tab', ESC: 'Escape', BACKSPACE: 'Backspace' }
 
   // ── 事件监听 ──
 
@@ -401,42 +401,16 @@ export function useTableEnhancer(
     if (e.key === KEY.ESC) {
       hideMenu()
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === KEY.A) {
-      const cell = getFocusedCell()
-      if (cell) {
-        const table = cell.closest('table')!
-        const level = getTableSelectionLevel(table)
-        const sel = window.getSelection()
-        if (!sel) return
-
-        if (level >= 3) return
-
-        e.preventDefault()
-        e.stopPropagation()
-
-        let targetRange: Range
-
-        if (level === 2) {
-          targetRange = document.createRange()
-          targetRange.selectNode(table)
-        } else if (level === 1) {
-          const row = cell.closest('tr')!
-          const rowCells = row.querySelectorAll('td, th')
-          targetRange = document.createRange()
-          targetRange.setStart(rowCells[0], 0)
-          targetRange.setEnd(rowCells[rowCells.length - 1], rowCells[rowCells.length - 1].childNodes.length)
-        } else {
-          targetRange = document.createRange()
-          targetRange.selectNodeContents(cell)
-        }
-
-        sel.removeAllRanges()
-        sel.addRange(targetRange)
-      }
-    }
     if (e.key === KEY.BACKSPACE) {
       const table = findTableFromSelection()
       if (!table) return
+      // 如果选区内有非表格内容，不拦截 → 浏览器默认行为删除整个选区
+      const sel = window.getSelection()
+      if (sel?.rangeCount) {
+        const range = sel.getRangeAt(0)
+        const tblNode: Node = table
+        if (!tblNode.contains(range.startContainer) || !tblNode.contains(range.endContainer)) return
+      }
       const level = getTableSelectionLevel(table)
       if (level < 2) return
       e.preventDefault()
@@ -520,5 +494,5 @@ export function useTableEnhancer(
     menuEl = null
   }
 
-  return { setup, cleanup, findTableFromSelection, getTableSelectionLevel }
+  return { setup, cleanup, findTableFromSelection, getTableSelectionLevel, getFocusedCell }
 }
