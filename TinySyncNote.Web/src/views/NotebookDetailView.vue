@@ -107,9 +107,9 @@ async function handleImport() {
   try {
     const formData = new FormData()
     formData.append('file', importFile.value)
-    const isZip = importFile.value.name.endsWith('.zip')
+    const name = importFile.value.name.toLowerCase()
 
-    if (isZip) {
+    if (name.endsWith('.zip')) {
       await http.post(`/api/export/import/zip?notebookId=${notebookId.value}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
@@ -118,7 +118,10 @@ async function handleImport() {
         ElMessage.warning('请先在左侧选择一个目录')
         return
       }
-      await http.post(`/api/export/import/markdown?categoryId=${noteStore.selectedCategoryId}`, formData, {
+      const endpoint = name.endsWith('.docx') ? 'docx'
+                     : name.endsWith('.xlsx') ? 'xlsx'
+                     : 'markdown'
+      await http.post(`/api/export/import/${endpoint}?categoryId=${noteStore.selectedCategoryId}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
     }
@@ -214,14 +217,14 @@ async function handleDeleteNote(noteId: string, _noteTitle: string) {
       @closed="importFile = null"
     >
       <div class="import-body">
-        <p class="import-tip">支持 .md 文件和 .zip 压缩包（ZIP 会还原目录结构，<strong>自动导入 assets/ 目录中的图片附件</strong>）</p>
+        <p class="import-tip">支持 .md、.docx、.xlsx 文件和 .zip 压缩包（ZIP 会还原目录结构，<strong>自动导入 assets/ 目录中的图片附件</strong>）</p>
         <el-upload
           drag
           :auto-upload="false"
           :show-file-list="true"
           :limit="1"
           :on-change="(u: any) => onImportFileChange(u.raw!)"
-          accept=".md,.zip"
+          accept=".md,.zip,.docx,.xlsx"
         >
           <el-icon :size="40" color="#c0c4cc"><Upload /></el-icon>
           <div class="el-upload__text">将文件拖到此处，或<em>点击选择</em></div>

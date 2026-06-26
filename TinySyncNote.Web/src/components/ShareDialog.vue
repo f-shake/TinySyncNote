@@ -55,7 +55,18 @@ async function handleExportHtml() {
   finally { exporting.value = false }
 }
 
-// ── Tab 3: 分享给用户 ──
+// ── Tab 3: 导出 Word ──
+async function handleExportWord() {
+  exporting.value = true
+  try {
+    const { data, filename } = await shareStore.exportAsDocx(props.noteId)
+    downloadBlob(data, filename)
+    ElMessage.success('导出成功')
+  } catch { ElMessage.error('导出失败') }
+  finally { exporting.value = false }
+}
+
+// ── Tab 4: 分享给用户 ──
 const searchQuery = ref('')
 const selectedUser = ref<{ id: string; username: string } | null>(null)
 
@@ -179,7 +190,17 @@ function downloadBlob(blob: Blob, filename: string) {
         </div>
       </el-tab-pane>
 
-      <!-- Tab 3: 分享给用户 -->
+      <!-- Tab 3: 导出 Word -->
+      <el-tab-pane label="导出 Word" name="word">
+        <div class="share-tab-body">
+          <p class="share-tab-desc">导出为 Word (.docx) 文件，图片以内嵌方式保留，适合打印和分享</p>
+          <el-button type="primary" :icon="Download" :loading="exporting" @click="handleExportWord">
+            下载 .docx 文件
+          </el-button>
+        </div>
+      </el-tab-pane>
+
+      <!-- Tab 4: 分享给用户 -->
       <el-tab-pane label="分享给用户" name="user">
         <div class="share-tab-body">
           <p class="share-tab-desc">搜索用户名并分享笔记，对方将在"共享的笔记"中看到</p>

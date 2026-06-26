@@ -37,6 +37,14 @@ export const useShareStore = defineStore('share', () => {
     return match ? decodeURIComponent(match[1]) : null
   }
 
+  // ── 导出 Word ──
+  async function exportAsDocx(noteId: string): Promise<{ data: Blob; filename: string }> {
+    const res = await http.get(`/api/export/note/${noteId}/docx`, {
+      responseType: 'blob'
+    })
+    return { data: res.data, filename: getFilename(res) || `note-${noteId}.docx` }
+  }
+
   // ── 用户搜索 ──
   async function searchUsers(query: string) {
     if (query.length < 2) { searchResults.value = []; return }
@@ -101,7 +109,7 @@ export const useShareStore = defineStore('share', () => {
 
   return {
     publicLinks, shares, searchResults, loading,
-    exportAsMarkdown, exportAsHtml,
+    exportAsMarkdown, exportAsHtml, exportAsDocx,
     searchUsers, shareNote,
     fetchPublicLinks, createPublicLink, revokePublicLink
   }

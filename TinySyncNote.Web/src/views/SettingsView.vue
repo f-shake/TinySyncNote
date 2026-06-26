@@ -54,6 +54,28 @@ function saveAISettings() {
   http.put('/api/settings', { ai_url: aiUrl.value, ai_key: aiKey.value, ai_model: aiModel.value })
   ElMessage.success('AI 设置已保存')
 }
+
+async function testAIConnection() {
+  ElMessage.info('测试连接中...')
+  try {
+    const res = await fetch(aiUrl.value + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${aiKey.value}`
+      },
+      body: JSON.stringify({
+        model: aiModel.value || 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'test' }],
+        max_tokens: 1
+      })
+    })
+    if (res.ok) ElMessage.success('连接成功')
+    else ElMessage.error(`连接失败 (HTTP ${res.status})`)
+  } catch {
+    ElMessage.error('连接失败，请检查设置')
+  }
+}
 </script>
 
 <template>
@@ -106,6 +128,7 @@ function saveAISettings() {
         <el-input v-model="aiModel" placeholder="gpt-4o-mini" size="small" style="width: 240px" />
       </div>
       <div style="margin-top: 12px; text-align: right;">
+        <el-button size="small" @click="testAIConnection">测试</el-button>
         <el-button type="primary" size="small" @click="saveAISettings">保存 AI 设置</el-button>
       </div>
     </div>

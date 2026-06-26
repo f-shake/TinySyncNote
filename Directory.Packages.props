@@ -4,7 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- EF Core family -->
-    <PackageVersion Include="Markdig" Version="1.3.0" />
+    <PackageVersion Include="Markdig" Version="1.3.2" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.9" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
@@ -26,10 +26,11 @@
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
     <!-- Extensions -->
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <!-- Testing -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
   </ItemGroup>
 </Project>

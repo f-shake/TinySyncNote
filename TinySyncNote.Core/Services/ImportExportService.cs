@@ -1,7 +1,10 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
+using DocumentFormat.OpenXml.Packaging;
 using Markdig;
+using W = DocumentFormat.OpenXml.Wordprocessing;
+using S = DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.EntityFrameworkCore;
 using TinySyncNote.Core.Data;
 using TinySyncNote.Core.Models.DTOs;
@@ -16,8 +19,11 @@ public interface IImportExportService
     Task<byte[]> ExportNoteAsZipAsync(Guid noteId, Guid userId);
     Task<ExportNoteHtmlResult> ExportNoteAsHtmlAsync(Guid noteId, Guid userId, string theme = "light");
     Task<byte[]> ExportNoteHtmlAsZipAsync(Guid noteId, Guid userId, string theme = "light");
+    Task<ExportNoteBinaryResult> ExportNoteAsDocxAsync(Guid noteId, Guid userId);
     Task<byte[]> ExportNotebookAsync(Guid notebookId, Guid userId);
     Task<ImportResult> ImportMarkdownAsync(Guid categoryId, Guid userId, string fileName, Stream content);
+    Task<ImportResult> ImportDocxAsync(Guid categoryId, Guid userId, string fileName, Stream content);
+    Task<ImportResult> ImportXlsxAsync(Guid categoryId, Guid userId, string fileName, Stream content);
     Task<ImportResult> ImportZipAsync(Guid notebookId, Guid userId, Stream zipStream);
 }
 
@@ -311,6 +317,88 @@ public class ImportExportService : IImportExportService
         return ms.ToArray();
     }
 
+    // ── 单篇笔记 → Word (.docx) ──
+    public async Task<ExportNoteBinaryResult> ExportNoteAsDocxAsync(Guid noteId, Guid userId)
+    {
+        var note = await _db.Notes
+            .Include(n => n.Category)
+            .FirstOrDefaultAsync(n => n.Id == noteId)
+            ?? throw new KeyNotFoundException("笔记不存在");
+
+        await VerifyNotebookAccess(note.Category.NotebookId, userId);
+
+        // 扫描附件引用，将图片内嵌为 base64（同 HTML 导出）
+        var guids = new HashSet<Guid>();
+        foreach (Match m in AttachmentUrlRx.Matches(note.Content))
+        {
+            if (Guid.TryParse(m.Groups[1].Value, out var g))
+                guids.Add(g);
+        }
+
+        var attachments = await _db.NoteAttachments
+            .Where(a => guids.Contains(a.Id))
+            .ToListAsync();
+        var attachmentMap = attachments.ToDictionary(a => a.Id);
+
+        var htmlContent = AttachmentUrlRx.Replace(note.Content, m =>
+        {
+            if (!Guid.TryParse(m.Groups[1].Value, out var guid)) return m.Value;
+            if (!attachmentMap.TryGetValue(guid, out var att)) return m.Value;
+            var b64 = Convert.ToBase64String(ReadAttachmentData(att));
+            return $"data:{att.ContentType};base64,{b64}";
+        });
+
+        var safeName = SanitizeFileName(note.Title);
+        var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        var bodyHtml = Markdig.Markdown.ToHtml(htmlContent, pipeline);
+
+        var fullHtml = $"<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n" +
+            $"<meta charset=\"UTF-8\">\n<title>{EscapeHtml(note.Title)}</title>\n" +
+            $"<style>\n" +
+            $"body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; " +
+            $"max-width: 800px; margin: 0 auto; padding: 20px; color: #333; line-height: 1.6; }}\n" +
+            $"h1, h2, h3, h4, h5, h6 {{ margin-top: 1.5em; margin-bottom: 0.5em; }}\n" +
+            $"code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }}\n" +
+            $"pre {{ background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; }}\n" +
+            $"pre code {{ background: none; padding: 0; }}\n" +
+            $"blockquote {{ border-left: 4px solid #ddd; margin: 0; padding: 0 16px; color: #666; }}\n" +
+            $"table {{ border-collapse: collapse; width: 100%; }}\n" +
+            $"th, td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}\n" +
+            $"th {{ background: #f4f4f4; }}\n" +
+            $"img {{ max-width: 100%; }}\n" +
+            $"</style>\n</head>\n<body>\n" +
+            $"<article class=\"markdown-body\">{bodyHtml}</article>\n</body>\n</html>";
+
+        byte[] docxBytes;
+        using (var ms = new MemoryStream())
+        {
+            using (var doc = WordprocessingDocument.Create(ms, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+            {
+                var mainPart = doc.AddMainDocumentPart();
+                mainPart.Document = new DocumentFormat.OpenXml.Wordprocessing.Document();
+                var body = mainPart.Document.AppendChild(new DocumentFormat.OpenXml.Wordprocessing.Body());
+
+                var chunkId = "htmlChunk1";
+                var chunkPart = mainPart.AddAlternativeFormatImportPart(
+                    AlternativeFormatImportPartType.Html, chunkId);
+
+                using (var writer = new StreamWriter(chunkPart.GetStream(), new UTF8Encoding(false)))
+                {
+                    await writer.WriteAsync(fullHtml);
+                }
+
+                body.AppendChild(new DocumentFormat.OpenXml.Wordprocessing.AltChunk { Id = chunkId });
+            }
+            docxBytes = ms.ToArray();
+        }
+
+        return new ExportNoteBinaryResult
+        {
+            FileName = $"{safeName}.docx",
+            Content = docxBytes
+        };
+    }
+
     // ── 整个笔记本 → ZIP（含附件 assets/） ──
     public async Task<byte[]> ExportNotebookAsync(Guid notebookId, Guid userId)
     {
@@ -474,6 +562,268 @@ public class ImportExportService : IImportExportService
             };
 
             _db.Notes.Add(note);
+            await _db.SaveChangesAsync();
+            result.NotesImported = 1;
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"{fileName}: {ex.Message}");
+        }
+
+        return result;
+    }
+
+    // ── 导入 Word (.docx) ──
+    public async Task<ImportResult> ImportDocxAsync(Guid categoryId, Guid userId, string fileName, Stream content)
+    {
+        var result = new ImportResult();
+        try
+        {
+            await VerifyCategoryAccess(categoryId, userId);
+
+            using var ms = new MemoryStream();
+            await content.CopyToAsync(ms);
+            ms.Position = 0;
+
+            var sb = new StringBuilder();
+            using (var doc = WordprocessingDocument.Open(ms, false))
+            {
+                var body = doc.MainDocumentPart?.Document.Body;
+                if (body == null) throw new InvalidOperationException("文档为空");
+
+                // 从 styles.xml 构建样式 → 大纲级别映射（通过 basedOn 链）
+                var stylePart = doc.MainDocumentPart?.StyleDefinitionsPart;
+                var styleOutlineMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                if (stylePart?.Styles != null)
+                {
+                    var allStyles = stylePart.Styles.Elements<W.Style>().ToList();
+                    // 先遍历一遍，摘出直接定义了大纲级别的样式
+                    foreach (var s in allStyles)
+                    {
+                        var olvlEl = s.StyleParagraphProperties?.OutlineLevel;
+                        if (olvlEl != null)
+                        {
+                            var valAttr = olvlEl.GetAttribute("val", "http://schemas.openxmlformats.org/wordprocessingml/2006/main");
+                            if (!string.IsNullOrEmpty(valAttr.Value) && int.TryParse(valAttr.Value, out var olvl) && olvl >= 0 && olvl <= 8)
+                            {
+                                var id = s.StyleId?.Value ?? "";
+                                styleOutlineMap[id] = olvl + 1;
+                            }
+                        }
+                    }
+                    // 再处理没有直接定义但有 basedOn 继承链的样式
+                    // （最多追溯 10 层，防止循环引用）
+                    foreach (var s in allStyles)
+                    {
+                        var id = s.StyleId?.Value ?? "";
+                        if (styleOutlineMap.ContainsKey(id)) continue;
+                        var basedOn = s.BasedOn?.Val?.Value;
+                        var depth = 0;
+                        while (basedOn != null && !styleOutlineMap.ContainsKey(basedOn) && depth < 10)
+                        {
+                            var parent = allStyles.FirstOrDefault(x => x.StyleId?.Value == basedOn);
+                            if (parent?.StyleParagraphProperties?.OutlineLevel != null)
+                            {
+                                var valAttr = parent.StyleParagraphProperties.OutlineLevel.GetAttribute("val", "http://schemas.openxmlformats.org/wordprocessingml/2006/main");
+                                if (!string.IsNullOrEmpty(valAttr.Value) && int.TryParse(valAttr.Value, out var olvl) && olvl >= 0 && olvl <= 8)
+                                    styleOutlineMap[basedOn] = olvl + 1;
+                            }
+                            basedOn = parent?.BasedOn?.Val?.Value;
+                            depth++;
+                        }
+                        if (basedOn != null && styleOutlineMap.TryGetValue(basedOn, out var inherited))
+                            styleOutlineMap[id] = inherited;
+                    }
+                }
+
+                // 按文档顺序遍历 body 的子元素（段落和表格交错的文档）
+                foreach (var element in body.Elements())
+                {
+                    if (element is W.Paragraph para)
+                    {
+                        var text = string.Concat(para.Descendants<W.Text>().Select(t => t.Text));
+                        var pp = para.ParagraphProperties;
+
+                        // 检测标题级别：段落自身大纲级别 > 样式继承的大纲级别
+                        var headingLevel = 0;
+
+                        // ① 段落直接定义的大纲级别
+                        if (pp?.OutlineLevel != null)
+                        {
+                            var valAttr = pp.OutlineLevel.GetAttribute("val", "http://schemas.openxmlformats.org/wordprocessingml/2006/main");
+                            if (!string.IsNullOrEmpty(valAttr.Value) && int.TryParse(valAttr.Value, out var olvl) && olvl >= 0 && olvl <= 8)
+                                headingLevel = olvl + 1;
+                        }
+
+                        // ② 样式继承的大纲级别
+                        if (headingLevel == 0)
+                        {
+                            var styleId = pp?.ParagraphStyleId?.Val?.Value;
+                            if (styleId != null && styleOutlineMap.TryGetValue(styleId, out var slvl))
+                                headingLevel = slvl;
+                        }
+
+                        if (headingLevel > 0)
+                        {
+                            sb.AppendLine(new string('#', headingLevel) + " " + text);
+                        }
+                        else if (string.IsNullOrWhiteSpace(text))
+                        {
+                            sb.AppendLine();
+                        }
+                        else
+                        {
+                            sb.AppendLine(text);
+                        }
+                    }
+                    else if (element is W.Table table)
+                    {
+                        sb.AppendLine();
+                        var first = true;
+                        foreach (var row in table.Elements<W.TableRow>())
+                        {
+                            var cells = row.Elements<W.TableCell>()
+                                .Select(c => string.Concat(c.Descendants<W.Text>().Select(t => t.Text)).Trim())
+                                .ToList();
+                            sb.AppendLine("| " + string.Join(" | ", cells) + " |");
+                            if (first)
+                            {
+                                sb.AppendLine("|" + string.Join("|", cells.Select(_ => " --- ")) + "|");
+                                first = false;
+                            }
+                        }
+                        sb.AppendLine();
+                    }
+                }
+            }
+
+            var title = Path.GetFileNameWithoutExtension(fileName);
+            var bodyText = sb.ToString().Trim();
+
+            _db.Notes.Add(new Note
+            {
+                CategoryId = categoryId,
+                Title = title,
+                Content = bodyText,
+                Version = 1
+            });
+            await _db.SaveChangesAsync();
+            result.NotesImported = 1;
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"{fileName}: {ex.Message}");
+        }
+
+        return result;
+    }
+
+    // ── 导入 Excel (.xlsx) ──
+    public async Task<ImportResult> ImportXlsxAsync(Guid categoryId, Guid userId, string fileName, Stream content)
+    {
+        var result = new ImportResult();
+        try
+        {
+            await VerifyCategoryAccess(categoryId, userId);
+
+            using var ms = new MemoryStream();
+            await content.CopyToAsync(ms);
+            ms.Position = 0;
+
+            var sb = new StringBuilder();
+            using (var doc = SpreadsheetDocument.Open(ms, false))
+            {
+                var workbookPart = doc.WorkbookPart;
+                var sheet = workbookPart?.Workbook.Descendants<S.Sheet>().FirstOrDefault();
+                if (sheet == null) throw new InvalidOperationException("工作表为空");
+
+                var worksheetPart = workbookPart?.GetPartById(sheet.Id!) as WorksheetPart;
+                var sheetData = worksheetPart?.Worksheet.Descendants<S.SheetData>().FirstOrDefault();
+                if (sheetData == null) throw new InvalidOperationException("无数据");
+
+                var sharedStringPart = workbookPart?.GetPartsOfType<SharedStringTablePart>().FirstOrDefault();
+                var sharedStrings = sharedStringPart?.SharedStringTable.Elements<S.SharedStringItem>()
+                    .Select(s => s.InnerText).ToList() ?? [];
+
+                // 解析样式表，检测日期格式
+                var stylesPart = workbookPart?.GetPartsOfType<WorkbookStylesPart>().FirstOrDefault();
+                // 明确是日期的内置格式 ID：14=短日期, 15-22=日期/时间
+                var dateFormatIds = new HashSet<int> { 14, 15, 16, 17, 18, 19, 20, 21, 22 };
+                var styleToDate = new Dictionary<uint, bool>(); // cellXfs index → isDate
+                var cellFormats = stylesPart?.Stylesheet?.CellFormats?.Elements<S.CellFormat>().ToList() ?? [];
+                for (uint i = 0; i < cellFormats.Count; i++)
+                {
+                    var nfId = cellFormats[(int)i].NumberFormatId?.Value;
+                    if (nfId == null) continue;
+                    if (dateFormatIds.Contains((int)nfId.Value)) { styleToDate[i] = true; continue; }
+                    // 自定义格式（ID ≥ 164）：检查格式字符串是否含日期标记
+                    if ((int)nfId.Value >= 164)
+                    {
+                        var custom = stylesPart?.Stylesheet?.NumberingFormats?
+                            .Elements<S.NumberingFormat>()
+                            .FirstOrDefault(f => f.NumberFormatId?.Value == nfId.Value);
+                        var code = custom?.FormatCode?.Value ?? "";
+                        if (code.Contains('y') || code.Contains('Y'))
+                            styleToDate[i] = true;
+                    }
+                }
+
+                static string SerialToDate(string serialText)
+                {
+                    if (!double.TryParse(serialText, System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out var serial))
+                        return serialText;
+                    if (serial < 1) return serialText; // 纯时间，暂不处理
+                    var epoch = new DateTime(1900, 1, 1);
+                    var days = (int)serial;
+                    if (days > 60) days--; // 修正 Excel 闰年 bug
+                    return epoch.AddDays(days - 1).ToString("yyyy-MM-dd");
+                }
+
+                string GetCellValue(S.Cell cell)
+                {
+                    if (cell.CellValue == null) return "";
+                    var val = cell.CellValue.Text;
+
+                    // SharedString
+                    if (cell.DataType?.Value == S.CellValues.SharedString && int.TryParse(val, out var idx) && idx >= 0 && idx < sharedStrings.Count)
+                        return sharedStrings[idx];
+
+                    // 日期格式
+                    var styleIdx = cell.StyleIndex?.Value;
+                    if (styleIdx.HasValue && styleToDate.TryGetValue(styleIdx.Value, out var isDate) && isDate)
+                        return SerialToDate(val);
+
+
+                    return val;
+                }
+
+                foreach (var row in sheetData.Elements<S.Row>())
+                {
+                    var cells = row.Elements<S.Cell>().Select(GetCellValue).ToList();
+                    sb.AppendLine("| " + string.Join(" | ", cells) + " |");
+                }
+            }
+
+            var title = Path.GetFileNameWithoutExtension(fileName);
+            var bodyText = sb.ToString().Trim();
+
+            // 如果第一行是表头，加分隔线
+            var lines = bodyText.Split('\n');
+            if (lines.Length >= 2)
+            {
+                var cols = lines[0].Split('|').Length - 2; // 去掉首尾空
+                var sep = "|" + string.Join("|", Enumerable.Repeat(" --- ", Math.Max(1, cols))) + "|";
+                bodyText = lines[0] + "\n" + sep + "\n" + string.Join("\n", lines.Skip(1));
+            }
+
+            _db.Notes.Add(new Note
+            {
+                CategoryId = categoryId,
+                Title = title,
+                Content = bodyText,
+                Version = 1
+            });
             await _db.SaveChangesAsync();
             result.NotesImported = 1;
         }

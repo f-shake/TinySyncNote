@@ -74,6 +74,10 @@ export function useSync() {
 
     connection.onclose(() => {
       connected.value = false
+      // 自动重连耗尽后手动重试（指数退避）
+      if (!disposed) {
+        setTimeout(() => connect(), 10000)
+      }
     })
 
     try {

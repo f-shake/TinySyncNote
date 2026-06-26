@@ -110,6 +110,25 @@ public class ImportExportController : ControllerBase
         }
     }
 
+    /// <summary>导出单篇笔记为 Word (.docx)</summary>
+    [HttpGet("note/{noteId}/docx")]
+    public async Task<ActionResult> ExportNoteDocx(Guid noteId)
+    {
+        try
+        {
+            var result = await _service.ExportNoteAsDocxAsync(noteId, UserId);
+            return FileWithChineseName(result.Content, result.ContentType, result.FileName);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
     /// <summary>支持中文文件名的 File 响应</summary>
     private ActionResult FileWithChineseName(byte[] bytes, string contentType, string fileName)
     {
@@ -149,6 +168,60 @@ public class ImportExportController : ControllerBase
             return Ok(new { result.NotesImported, Errors = result.Errors });
 
         return Ok(result);
+    }
+
+    /// <summary>导入 Word (.docx) 文件</summary>
+    [HttpPost("import/docx")]
+    public async Task<ActionResult<ImportResult>> ImportDocx(
+        [FromQuery] Guid categoryId,
+        IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "请选择文件" });
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            var result = await _service.ImportDocxAsync(categoryId, UserId, file.FileName, stream);
+            if (result.Errors.Count > 0)
+                return Ok(new { result.NotesImported, Errors = result.Errors });
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>导入 Excel (.xlsx) 文件</summary>
+    [HttpPost("import/xlsx")]
+    public async Task<ActionResult<ImportResult>> ImportXlsx(
+        [FromQuery] Guid categoryId,
+        IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "请选择文件" });
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            var result = await _service.ImportXlsxAsync(categoryId, UserId, file.FileName, stream);
+            if (result.Errors.Count > 0)
+                return Ok(new { result.NotesImported, Errors = result.Errors });
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 
     /// <summary>导入 ZIP 压缩包</summary>
