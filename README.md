@@ -77,7 +77,7 @@ cd TinySyncNote.Api
 dotnet run
 ```
 
-首次启动会自动创建 SQLite 数据库文件 `TinySyncNote.db`。
+首次启动会自动创建 SQLite 数据库文件 `App_Data/TinySyncNote.db`。
 
 ### 2. 启动前端
 
@@ -241,23 +241,71 @@ TinySyncNote/
     └── ServicesTests.cs
 ```
 
+## 📝 编辑器增强
+
+TinySyncNote 对 Vditor 进行了深度定制，所有编辑器相关代码集中在 `src/editor/` 目录下：
+
+| 文件 | 说明 |
+|------|------|
+| `useTableEnhancer.ts` | 表格操作增强：Tab/Shift+Tab 单元格导航、右键菜单（插入/删除行列、对齐、删除表格）、Ctrl+A 递进选择（单元格→行→表→全选）、选中单元格高亮、Backspace 删除行/表 |
+| `useClipboardEnhancer.ts` | 剪贴板增强：复制时同时输出 `text/html`（Word 等富文本编辑器用）和 `text/plain`（Markdown 源码）；表格复制自动添加边框样式 |
+| `editor.css` | 全局样式：暗色模式 Vditor 主题覆盖、右键菜单样式、选中单元格高亮样式 |
+
+### 表格操作
+
+| 操作 | 说明 |
+|------|------|
+| **Tab** | 在单元格间跳转，最后一个单元格自动新增行 |
+| **Shift+Tab** | 反向跳转 |
+| **Ctrl+A × 1** | 选中当前单元格 |
+| **Ctrl+A × 2** | 选中整行 |
+| **Ctrl+A × 3** | 选中整个表格 |
+| **Ctrl+A × 4** | 全选编辑器内容 |
+| **Backspace**（行选中） | 删除当前行 |
+| **Backspace**（表选中） | 删除整个表格 |
+| **右键** | 插入行/列、删除行/列/表格、左/中/右对齐 |
+| **工具栏「表格」按钮** | 自定义行数列数弹窗，焦点在表格内时自动禁用 |
+
+### 复制行为
+
+| 目标 | 剪贴板格式 |
+|------|-----------|
+| Word / 富文本编辑器 | `text/html`（带格式、表格含边框） |
+| 纯文本编辑器 / 代码工具 | `text/plain`（Markdown 源码） |
+
 ## 🔧 配置
 
 ### 数据库切换
 
-项目默认使用 SQLite。通过条件编译符号切换数据库提供程序：
+项目默认使用 SQLite。通过运行切换脚本转移到 PostgreSQL 或 MySQL：
 
-```xml
-<!-- Directory.Packages.props 中定义编译符号 -->
-<DefineConstants Condition="'$(DatabaseProvider)'=='PostgreSQL'">POSTGRESQL</DefineConstants>
-<DefineConstants Condition="'$(DatabaseProvider)'=='MySQL'">MYSQL</DefineConstants>
+```bash
+# 启动容器
+docker compose up -d postgresql
+
+# 切换到 PostgreSQL（会修改 .csproj 启用 ENABLE_PGSQL 编译符号）
+bash scripts/switch-to-postgresql.sh
+# 或 PowerShell
+.\scripts\switch-to-postgresql.ps1
 ```
 
 ```bash
-# 启动 PostgreSQL
-docker-compose up -d postgres
-dotnet run -p TinySyncNote.Api -p:DatabaseProvider=PostgreSQL
+# 启动 MySQL
+docker compose up -d mysql
+
+# 切换到 MySQL
+bash scripts/switch-to-mysql.sh
+.\scripts\switch-to-mysql.ps1
 ```
+
+脚本会完成：
+
+1. 修改 `appsettings.json` 中的 `DatabaseProvider`
+2. 取消注释 `Directory.Packages.props` 中对应的包版本
+3. 取消注释 `.csproj` 中的包引用
+4. 添加 `ENABLE_PGSQL` 或 `ENABLE_MYSQL` 编译符号
+
+切回 SQLite 只需手动将 `DatabaseProvider` 改回 `"Sqlite"`。
 
 ### JWT 配置
 
@@ -265,12 +313,12 @@ dotnet run -p TinySyncNote.Api -p:DatabaseProvider=PostgreSQL
 
 ```json
 {
-  "JwtSettings": {
-    "Key": "your-256-bit-secret-key-here",
+  "Jwt": {
+    "Key": "TinySyncNote_SuperSecretKey_2024_MustBeAtLeast32Characters!",
     "Issuer": "TinySyncNote",
-    "Audience": "TinySyncNote",
-    "AccessTokenExpirationMinutes": 60,
-    "RefreshTokenExpirationDays": 7
+    "Audience": "TinySyncNoteApp",
+    "AccessTokenExpirationMinutes": "60",
+    "RefreshTokenExpirationDays": "30"
   }
 }
 ```
