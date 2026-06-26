@@ -15,6 +15,7 @@ Publish/
 node_modules/
 dist/
 .vite/
+package-lock.json
 
 # IDE
 .vs/
