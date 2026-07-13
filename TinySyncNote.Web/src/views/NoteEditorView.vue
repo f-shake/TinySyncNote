@@ -116,6 +116,7 @@ let modeCheckTimer: ReturnType<typeof setInterval> | null = null
 let tableEnhancer: ReturnType<typeof useTableEnhancer> | null = null
 let clipboardEnhancer: ReturnType<typeof useClipboardEnhancer> | null = null
 let ctrlAEnhancer: ReturnType<typeof useCtrlAEnhancer> | null = null
+let toolbarWheelCleanup: (() => void) | null = null
 let lastSavedVersion = 0
 let pendingSaveVersion = 0  // 正在保存的版本号，用于过滤自己的 SignalR 通知
 
@@ -204,6 +205,7 @@ onBeforeUnmount(() => {
   ctrlAEnhancer?.cleanup()
   clipboardEnhancer?.cleanup()
   tableEnhancer?.cleanup()
+  toolbarWheelCleanup?.()
   vditor?.destroy()
 })
 
@@ -396,10 +398,28 @@ function initEditor(content: string) {
       })
       ctrlA.setup()
       ctrlAEnhancer = ctrlA
+
+      // 工具栏鼠标滚轮水平滚动
+      setupToolbarWheelScroll()
     }
   })
 }
 
+// ── 工具栏鼠标滚轮水平滚动 ──
+function setupToolbarWheelScroll() {
+  const el = editorRef.value
+  if (!el) return
+  const toolbar = el.querySelector('.vditor-toolbar') as HTMLElement | null
+  if (!toolbar) return
+  const handler = (e: WheelEvent) => {
+    if (toolbar.scrollWidth > toolbar.clientWidth) {
+      toolbar.scrollLeft += e.deltaY
+      e.preventDefault()
+    }
+  }
+  toolbar.addEventListener('wheel', handler, { passive: false })
+  toolbarWheelCleanup = () => toolbar.removeEventListener('wheel', handler)
+}
 
 async function autoSave() {
   if (!vditor || !noteStore.currentNote) return
@@ -522,6 +542,13 @@ async function loadAISettings() {
   } catch { /* ignore */ }
 }
 
+// ── 响应式抽屉宽度 ──
+const windowWidth = ref(window.innerWidth)
+function onResize() { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+const drawerSize = computed(() => windowWidth.value <= 480 ? '80%' : '400px')
+
 function openAIChat() {
   if (showAIChat.value) {
     showAIChat.value = false
@@ -615,49 +642,56 @@ function onTitleChange() {
   <div class="note-editor-view" v-if="loaded">
     <!-- 顶栏 -->
     <div class="editor-toolbar">
-      <el-button
-        class="mobile-back-btn"
-        text
-        :icon="ArrowLeft"
-        @click="goBack"
-      />
-      <div class="title-area">
-        <el-input
-          v-model="title"
-          placeholder="笔记标题"
-          class="title-input"
-          maxlength="500"
-          @input="onTitleChange"
+      <!-- 第一行：返回 + 标题 -->
+      <div class="toolbar-main-row">
+        <el-button
+          class="mobile-back-btn"
+          text
+          :icon="ArrowLeft"
+          @click="goBack"
         />
+        <div class="title-area">
+          <el-input
+            v-model="title"
+            placeholder="笔记标题"
+            class="title-input"
+            maxlength="500"
+            @input="onTitleChange"
+          />
+        </div>
       </div>
 
-      <div class="toolbar-actions">
-        <!-- 同步状态 -->
-        <el-tooltip content="实时同步状态" placement="bottom">
-          <el-tag
-            :type="syncConnected ? 'success' : 'danger'"
-            size="small"
-            effect="plain"
-          >
-            {{ syncConnected ? '已连接' : '离线' }}
-          </el-tag>
-        </el-tooltip>
+      <!-- 第二行：连接/保存状态（左侧）+ 历史版本/分享/AI（右侧） -->
+      <div class="toolbar-sub-row">
+        <div class="toolbar-status">
+          <el-tooltip content="实时同步状态" placement="bottom">
+            <el-tag
+              :type="syncConnected ? 'success' : 'danger'"
+              size="small"
+              effect="plain"
+            >
+              {{ syncConnected ? '已连接' : '离线' }}
+            </el-tag>
+          </el-tooltip>
 
-        <el-tooltip content="保存状态" placement="bottom">
-          <el-tag
-            :type="saving ? 'info' : dirty ? 'warning' : 'success'"
-            size="small"
-            effect="plain"
-            :style="{ cursor: dirty && !saving ? 'pointer' : 'default' }"
-            @click="handleSaveTagClick"
-          >
-            {{ saving ? '保存中' : dirty ? '未保存' : '已保存' }}
-          </el-tag>
-        </el-tooltip>
+          <el-tooltip content="保存状态" placement="bottom">
+            <el-tag
+              :type="saving ? 'info' : dirty ? 'warning' : 'success'"
+              size="small"
+              effect="plain"
+              :style="{ cursor: dirty && !saving ? 'pointer' : 'default' }"
+              @click="handleSaveTagClick"
+            >
+              {{ saving ? '保存中' : dirty ? '未保存' : '已保存' }}
+            </el-tag>
+          </el-tooltip>
+        </div>
 
-        <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
-        <el-button text :icon="Share" @click="openShareDialog">分享</el-button>
-        <el-button text :icon="Promotion" @click="openAIChat">AI</el-button>
+        <div class="toolbar-actions">
+          <el-button text :icon="Clock" @click="openSnapshotDrawer">历史版本</el-button>
+          <el-button text :icon="Share" @click="openShareDialog">分享</el-button>
+          <el-button text :icon="Promotion" @click="openAIChat">AI</el-button>
+        </div>
       </div>
     </div>
 
@@ -737,7 +771,7 @@ function onTitleChange() {
   <el-drawer
     v-model="showSnapshotDrawer"
     title="历史版本"
-    size="380px"
+    :size="drawerSize"
     :close-on-click-modal="false"
   >
     <div class="snapshot-drawer-body">
@@ -827,6 +861,14 @@ function onTitleChange() {
   z-index: 10;
 }
 
+.toolbar-main-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
 .title-area {
   flex: 1;
   min-width: 0;
@@ -843,6 +885,19 @@ function onTitleChange() {
   border: none;
   font-size: 18px;
   font-weight: 600;
+}
+
+.toolbar-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.toolbar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .toolbar-actions {
@@ -871,12 +926,34 @@ function onTitleChange() {
 
 .vditor-wrap {
   height: 100%;
+  width: 100%;
 }
 
 /* Vditor 覆盖 — 让它占满容器 */
 .vditor-wrap :deep(.vditor) {
   border: none !important;
   border-radius: 0 !important;
+}
+
+/* 编辑区域内容宽度铺满，不限制 max-width */
+.vditor-wrap :deep(.vditor-ir),
+.vditor-wrap :deep(.vditor-wysiwyg),
+.vditor-wrap :deep(.vditor-sv) {
+  width: 100% !important;
+}
+.vditor-wrap :deep(.vditor-content) {
+  width: 100%;
+}
+.vditor-wrap :deep(pre.vditor-reset) {
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+}
+
+@media (max-width: 480px) {
+  .vditor-wrap :deep(pre.vditor-reset) {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
 }
 
 .vditor-wrap :deep(.vditor-toolbar) {
@@ -1008,34 +1085,69 @@ function onTitleChange() {
 }
 
 /* ════════════════════════════════════════
+   编辑器操作栏：保持一行，左右滑动（所有宽度生效）
+   ════════════════════════════════════════ */
+.vditor-wrap :deep(.vditor-toolbar) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  -webkit-overflow-scrolling: touch;
+}
+.vditor-wrap :deep(.vditor-toolbar__item),
+.vditor-wrap :deep(.vditor-toolbar__divider) {
+  float: none !important;
+  flex-shrink: 0;
+}
+.vditor-wrap :deep(.vditor-toolbar__br) {
+  display: none !important;
+}
+.vditor-wrap :deep(.vditor-toolbar)::-webkit-scrollbar {
+  display: none;
+}
+.vditor-wrap :deep(.vditor-toolbar) {
+  scrollbar-width: none;
+}
+
+/* ════════════════════════════════════════
    编辑器 — 移动端自适应
    ════════════════════════════════════════ */
 @media (max-width: 1100px) {
-  .toolbar-actions .el-button span { display: none; }
+  .toolbar-actions :deep(.el-button) span { display: none; }
   .toolbar-actions { gap: 2px; }
   .toolbar-actions .el-button { padding: 5px 6px; font-size: 12px; }
 }
 
-@media (max-width: 900px) {
-  .editor-toolbar { flex-wrap: wrap; gap: 4px; padding: 6px 8px; }
-  .title-area { flex: 1; min-width: 100px; }
+@media (min-width: 721px) {
+  .mobile-back-btn { display: none; }
+  .toolbar-main-row { flex: 1; }
+  .toolbar-sub-row { flex-shrink: 0; }
 }
 
 @media (max-width: 720px) {
-  .toolbar-actions .el-tag { display: none; }
+  /* 720~481px：保持一行，压缩间距 */
+  .editor-toolbar { gap: 6px; padding: 6px 8px; }
+  .toolbar-main-row { flex: 1; }
+  .toolbar-sub-row { flex-shrink: 0; }
   .mobile-back-btn { display: inline-flex; }
   .drag-handle-v { display: none; }
   .editor-body > .ai-panel { width: auto !important; flex-shrink: unset !important; }
 }
 
-@media (min-width: 721px) {
-  .mobile-back-btn { display: none; }
-}
-
 @media (max-width: 480px) {
-  .editor-toolbar { padding: 4px 4px; gap: 2px; }
+  /* ≤480px：保持一行，全部挤在一行 */
+  .editor-toolbar {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 4px 6px;
+  }
+  .toolbar-main-row { flex: 1; min-width: 40px; gap: 4px; }
+  .toolbar-sub-row { flex-shrink: 0; gap: 2px; }
+  .toolbar-status { gap: 4px; padding-left: 0; }
+  .toolbar-status .el-tag { padding: 0 4px; font-size: 11px; }
+  .toolbar-actions { gap: 2px; margin-left: 10px; }
   .toolbar-actions .el-button { padding: 4px 4px; }
-  .toolbar-actions { gap: 2px; }
 }
 
 </style>
